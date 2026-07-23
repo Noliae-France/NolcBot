@@ -1,0 +1,31 @@
+name: build
+
+# Build direct sur le runner self-hosted Noliae (VPS), avec nolc récupéré
+# depuis le S3 souverain Noliae. Compile et exécute le selftest du paquet.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    runs-on: [self-hosted, noliae]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dépendances système (libsodium + OpenSSL)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsodium-dev libssl-dev
+
+      - name: Installer nolc (S3 souverain Noliae)
+        run: |
+          curl -fsSL https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-linux-x86_64.tar.gz -o /tmp/nolc.tar.gz
+          mkdir -p /tmp/nolc && tar -xzf /tmp/nolc.tar.gz -C /tmp/nolc
+          NOLC_BIN="$(find /tmp/nolc -type f -name nolc | head -1)"
+          sudo install -m 0755 "$NOLC_BIN" /usr/local/bin/nolc
+          nolc --version
+
+      - name: Build + exécution du selftest
+        run: |
+          nolc build examples/selftest.nol -o selftest --lien sodium --lien ssl --lien crypto
+          ./selftest

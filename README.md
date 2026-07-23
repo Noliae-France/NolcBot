@@ -30,6 +30,16 @@ Compilation d'un programme qui l'utilise : `--lien sodium --lien ssl --lien cryp
 (+ chemins OpenSSL/libsodium sur macOS). Le paquet est **auto-contenu** : il
 vendorise les modules stdlib dont il dépend dans `vendor/`.
 
+### Installer nolc (binaire souverain Noliae, S3 OVH)
+
+```bash
+curl -fsSL https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-linux-x86_64.tar.gz | tar -xz
+sudo install -m 0755 nolc /usr/local/bin/nolc
+```
+
+Aussi : `…-amd64.deb`, `…-x86_64.rpm` sur le même bucket. `.github/workflows/build.yml`
+compile le selftest **sur le runner self-hosted Noliae** en tirant nolc de ce S3.
+
 ## API principale
 
 | Fonction | Rôle |
