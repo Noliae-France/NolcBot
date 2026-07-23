@@ -1,0 +1,86 @@
+// Helpers Discord Interactions pour Nolc.
+//
+// Discord peut appeler un endpoint HTTPS avec des slash-commands sans passer
+// par la Gateway WebSocket. Ce module couvre ce mode HTTP : lecture du type
+// d'interaction, extraction du nom de commande et construction des réponses
+// JSON attendues. La vérification Ed25519 est dans `discord_sodium.nol`.
+
+import "json.nol"
+import "web.nol"
+
+fn discord_type_ping() -> Int {
+    return 1
+}
+
+fn discord_type_application_command() -> Int {
+    return 2
+}
+
+fn discord_callback_pong() -> Int {
+    return 1
+}
+
+fn discord_callback_message_channel() -> Int {
+    return 4
+}
+
+fn discord_message_ephemere_flag() -> Int {
+    return 64
+}
+
+fn discord_interaction_type(req: Requete) -> Option<Int> {
+    return json_chemin_int(req.corps, "type")
+}
+
+fn discord_commande_nom(req: Requete) -> Option<Text> {
+    return json_chemin_texte(req.corps, "data.name")
+}
+
+fn discord_message_signature(req: Requete) -> Option<Text> {
+    let timestamp = requete_entete(req, "X-Signature-Timestamp")
+    if not has(timestamp) {
+        return none
+    }
+    return some(unwrap_or(timestamp, "") + req.corps)
+}
+
+fn discord_reponse_pong() -> Reponse {
+    return reponse_json("{\"type\":1}")
+}
+
+fn discord_reponse_message(contenu: Text) -> Reponse {
+    let corps = "{\"type\":4,\"data\":{\"content\":" + json_texte(contenu) + "}}"
+    return reponse_json(corps)
+}
+
+fn discord_reponse_ephemere(contenu: Text) -> Reponse {
+    let corps = "{\"type\":4,\"data\":{\"content\":" + json_texte(contenu) + ",\"flags\":64}}"
+    return reponse_json(corps)
+}
+
+fn discord_reponse_401(req: Requete) -> Reponse {
+    return reponse_problem(erreur_http(401, "Unauthorized", "Signature Discord invalide.", requete_id(req)))
+}
+
+fn discord_reponse_400(req: Requete) -> Reponse {
+    return reponse_problem(erreur_http(400, "Bad Request", "Interaction Discord invalide.", requete_id(req)))
+}
+
+fn discord_dispatch(req: Requete, handler: Fn(Requete, Text) -> Reponse) -> WebResultat {
+    let t = discord_interaction_type(req)
+    if not has(t) {
+        return WebResultat.WebEchec(erreur_http(400, "Bad Request", "Type d'interaction absent.", requete_id(req)))
+    }
+    let ty = unwrap_or(t, 0)
+    if ty == 1 {
+        return WebResultat.WebOk(discord_reponse_pong())
+    }
+    if ty == 2 {
+        let nom = discord_commande_nom(req)
+        if not has(nom) {
+            return WebResultat.WebEchec(erreur_http(400, "Bad Request", "Nom de commande absent.", requete_id(req)))
+        }
+        return WebResultat.WebOk(handler(req, unwrap_or(nom, "")))
+    }
+    return WebResultat.WebEchec(erreur_http(400, "Bad Request", "Type d'interaction non supporte.", requete_id(req)))
+}

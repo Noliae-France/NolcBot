@@ -1,0 +1,141 @@
+// Côté CLIENT WebSocket (RFC 6455) — ce que lib/websocket.nol ne fournit pas.
+// La stdlib est orientée serveur : frames sortantes NON masquées, parse des
+// frames client MASQUÉES. Un client Discord Gateway a besoin de l'inverse :
+//   - handshake client (GET Upgrade + vérification de Sec-WebSocket-Accept) ;
+//   - frames sortantes MASQUÉES (obligatoire pour un client) ;
+//   - parse des frames serveur NON masquées.
+// On réutilise les primitives de lib/websocket.nol (accept, longueurs u64,
+// record WebSocketFrame, enum WebSocketAnalyse) et alea_bytes/base64 de la
+// stdlib crypto.
+
+import "../vendor/websocket.nol"
+import "../vendor/tls.nol"
+import "../vendor/sodium.nol"
+
+// Index du premier octet APRÈS le séparateur d'en-têtes "\r\n\r\n". -1 si absent.
+fn ws_fin_entetes(buf: Bytes) -> Int {
+    let n = len(buf)
+    var i = 0
+    while i + 3 < n {
+        if bytes_get(buf, i) == 13 and bytes_get(buf, i + 1) == 10
+            and bytes_get(buf, i + 2) == 13 and bytes_get(buf, i + 3) == 10 {
+            return i + 4
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+// Effectue le handshake client sur une session TLS déjà connectée.
+// Renvoie les octets déjà reçus APRÈS les en-têtes (début du 1er frame), ou
+// none si le handshake échoue.
+fn ws_handshake_client(ssl: Ptr<TlsSession>, hote: Text, chemin: Text) -> Option<Bytes> {
+    let cle = base64_encode(alea_bytes(16))
+    var req = "GET " + chemin + " HTTP/1.1\r\n"
+    req += "Host: " + hote + "\r\n"
+    req += "Upgrade: websocket\r\n"
+    req += "Connection: Upgrade\r\n"
+    req += "Sec-WebSocket-Key: " + cle + "\r\n"
+    req += "Sec-WebSocket-Version: 13\r\n\r\n"
+    let _n = tls_ecrire(ssl, req)
+
+    var buf = bytes_new()
+    var fin = -1
+    var lectures = 0
+    while lectures < 64 {
+        let mo = tls_lire_bytes(ssl)
+        if not has(mo) {
+            break
+        }
+        bytes_append(buf, unwrap_or(mo, bytes_new()))
+        fin = ws_fin_entetes(buf)
+        if fin >= 0 {
+            break
+        }
+        lectures = lectures + 1
+    }
+    if fin < 0 {
+        return none
+    }
+    let entetes = unwrap_or(bytes_to_text(bytes_slice(buf, 0, fin)), "")
+    if not contains(entetes, "101") {
+        return none
+    }
+    if not contains(entetes, websocket_accept(cle)) {
+        return none
+    }
+    return some(bytes_slice(buf, fin, len(buf) - fin))
+}
+
+// Construit un frame CLIENT masqué (bit MASK + clé de 4 octets aléatoires).
+fn ws_frame_client(opcode: Int, payload: Bytes) -> Bytes {
+    var out = bytes_new()
+    bytes_push(out, bit_or(128, bit_and(opcode, 15)))
+    let n = len(payload)
+    if n < 126 {
+        bytes_push(out, bit_or(128, n))
+    } else if n <= 65535 {
+        bytes_push(out, bit_or(128, 126))
+        bytes_push_u16(out, n)
+    } else {
+        bytes_push(out, bit_or(128, 127))
+        websocket_push_u64_be(out, n)
+    }
+    let mk = alea_bytes(4)
+    bytes_append(out, mk)
+    var i = 0
+    while i < n {
+        bytes_push(out, bit_xor(bytes_get(payload, i), bytes_get(mk, i % 4)))
+        i = i + 1
+    }
+    return out
+}
+
+fn ws_frame_client_texte(message: Text) -> Bytes {
+    return ws_frame_client(1, bytes_from_text(message))
+}
+
+fn ws_frame_client_close() -> Bytes {
+    return ws_frame_client(8, bytes_new())
+}
+
+// Parse un frame SERVEUR (non masqué). Même contrat que
+// websocket_parse_client_frame mais accepte les frames non masquées et refuse
+// les masquées.
+fn ws_parse_serveur(buf: Bytes, max_payload: Int) -> WebSocketAnalyse {
+    if len(buf) < 2 {
+        return WebSocketAnalyse.WebSocketIncomplet
+    }
+    let b0 = bytes_get(buf, 0)
+    let b1 = bytes_get(buf, 1)
+    let fin = bit_and(b0, 128) != 0
+    let opcode = bit_and(b0, 15)
+    let masque = bit_and(b1, 128) != 0
+    var taille = bit_and(b1, 127)
+    var pos = 2
+
+    if masque {
+        return WebSocketAnalyse.WebSocketErreur("frame serveur masquee")
+    }
+    if taille == 126 {
+        if len(buf) < 4 {
+            return WebSocketAnalyse.WebSocketIncomplet
+        }
+        taille = bytes_u16(buf, 2)
+        pos = 4
+    } else if taille == 127 {
+        if len(buf) < 10 {
+            return WebSocketAnalyse.WebSocketIncomplet
+        }
+        taille = websocket_u64_be(buf, 2)
+        pos = 10
+    }
+    if taille > max_payload {
+        return WebSocketAnalyse.WebSocketErreur("payload trop grand")
+    }
+    if len(buf) < pos + taille {
+        return WebSocketAnalyse.WebSocketIncomplet
+    }
+    let payload = bytes_slice(buf, pos, taille)
+    return WebSocketAnalyse.WebSocketFrameOk(WebSocketFrame { fin: fin, opcode: opcode, payload: payload, taille: pos + taille })
+}

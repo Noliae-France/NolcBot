@@ -1,0 +1,9 @@
+[projet]
+nom = "nolc-discord"
+version = "0.1.0"
+entree = "src/lib.nol"
+auteur = "Calilmadia"
+licence = "MIT"
+description = "Client Discord pour Nolc : Interactions HTTP (Ed25519) + Gateway WebSocket temps réel"
+
+[dependances]

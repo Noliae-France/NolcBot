@@ -1,0 +1,185 @@
+// WebSocket natif pour Nolc (RFC 6455, fondations serveur).
+//
+// Ce module fournit le handshake HTTP Upgrade et l'encodage/décodage de frames
+// simples. Il ne remplace pas encore une boucle serveur non bloquante complète :
+// l'application lit/écrit sur ses sockets TCP/TLS et appelle ces helpers.
+
+import "crypto.nol"
+import "web.nol"
+
+record WebSocketFrame {
+    fin: Bool,
+    opcode: Int,
+    payload: Bytes,
+    taille: Int
+}
+
+enum WebSocketAnalyse {
+    WebSocketFrameOk(WebSocketFrame),
+    WebSocketIncomplet,
+    WebSocketErreur(Text)
+}
+
+fn websocket_guid() -> Text {
+    return "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+}
+
+fn websocket_accept(cle: Text) -> Text {
+    return base64_encode(sha1(bytes_from_text(cle + websocket_guid())))
+}
+
+fn websocket_est_upgrade(req: Requete) -> Bool {
+    let upgrade = requete_entete(req, "Upgrade")
+    let connexion = requete_entete(req, "Connection")
+    let version = requete_entete(req, "Sec-WebSocket-Version")
+    let cle = requete_entete(req, "Sec-WebSocket-Key")
+    if not has(upgrade) or not has(connexion) or not has(version) or not has(cle) {
+        return false
+    }
+    if lower(unwrap_or(upgrade, "")) != "websocket" {
+        return false
+    }
+    if not contains(lower(unwrap_or(connexion, "")), "upgrade") {
+        return false
+    }
+    if unwrap_or(version, "") != "13" {
+        return false
+    }
+    return unwrap_or(cle, "") != ""
+}
+
+fn websocket_reponse_upgrade(req: Requete) -> Option<Reponse> {
+    if not websocket_est_upgrade(req) {
+        return none
+    }
+    let cle = unwrap_or(requete_entete(req, "Sec-WebSocket-Key"), "")
+    var r = reponse_new(101, "Switching Protocols", "application/octet-stream", "")
+    r = reponse_avec_entete(r, "Upgrade", "websocket")
+    r = reponse_avec_entete(r, "Connection", "Upgrade")
+    r = reponse_avec_entete(r, "Sec-WebSocket-Accept", websocket_accept(cle))
+    return some(r)
+}
+
+fn websocket_reponse_rendu_upgrade(r: Reponse) -> Text {
+    var s = "HTTP/1.1 101 Switching Protocols\r\n"
+    s += "Server: nolc-web\r\n"
+    if r.entetes != "" {
+        s += r.entetes + "\r\n"
+    }
+    return s + "\r\n"
+}
+
+fn websocket_push_u64_be(dst: Bytes, n: Int) {
+    var i = 0
+    while i < 8 {
+        bytes_push(dst, bit_and(bit_shr(n, (7 - i) * 8), 255))
+        i = i + 1
+    }
+}
+
+fn websocket_u64_be(src: Bytes, depart: Int) -> Int {
+    var n = 0
+    var i = 0
+    while i < 8 {
+        n = bit_or(bit_shl(n, 8), bytes_get(src, depart + i))
+        i = i + 1
+    }
+    return n
+}
+
+fn websocket_frame(opcode: Int, payload: Bytes) -> Bytes {
+    var out = bytes_new()
+    bytes_push(out, bit_or(128, bit_and(opcode, 15)))
+    let n = len(payload)
+    if n < 126 {
+        bytes_push(out, n)
+    } else if n <= 65535 {
+        bytes_push(out, 126)
+        bytes_push_u16(out, n)
+    } else {
+        bytes_push(out, 127)
+        websocket_push_u64_be(out, n)
+    }
+    bytes_append(out, payload)
+    return out
+}
+
+fn websocket_frame_texte(message: Text) -> Bytes {
+    return websocket_frame(1, bytes_from_text(message))
+}
+
+fn websocket_frame_binaire(payload: Bytes) -> Bytes {
+    return websocket_frame(2, payload)
+}
+
+fn websocket_frame_pong(payload: Bytes) -> Bytes {
+    return websocket_frame(10, payload)
+}
+
+fn websocket_frame_ping(payload: Bytes) -> Bytes {
+    return websocket_frame(9, payload)
+}
+
+fn websocket_frame_close() -> Bytes {
+    return websocket_frame(8, bytes_new())
+}
+
+fn websocket_parse_client_frame(buf: Bytes, max_payload: Int) -> WebSocketAnalyse {
+    if len(buf) < 2 {
+        return WebSocketAnalyse.WebSocketIncomplet
+    }
+    let b0 = bytes_get(buf, 0)
+    let b1 = bytes_get(buf, 1)
+    let fin = bit_and(b0, 128) != 0
+    let opcode = bit_and(b0, 15)
+    let masque = bit_and(b1, 128) != 0
+    var taille_payload = bit_and(b1, 127)
+    var pos = 2
+
+    if bit_and(b0, 112) != 0 {
+        return WebSocketAnalyse.WebSocketErreur("bits reserves non supportes")
+    }
+    if not masque {
+        return WebSocketAnalyse.WebSocketErreur("frame client non masquee")
+    }
+    if opcode != 1 and opcode != 2 and opcode != 8 and opcode != 9 and opcode != 10 {
+        return WebSocketAnalyse.WebSocketErreur("opcode non supporte")
+    }
+
+    if taille_payload == 126 {
+        if len(buf) < 4 {
+            return WebSocketAnalyse.WebSocketIncomplet
+        }
+        taille_payload = bytes_u16(buf, 2)
+        pos = 4
+    } else if taille_payload == 127 {
+        if len(buf) < 10 {
+            return WebSocketAnalyse.WebSocketIncomplet
+        }
+        taille_payload = websocket_u64_be(buf, 2)
+        pos = 10
+    }
+    if taille_payload > max_payload {
+        return WebSocketAnalyse.WebSocketErreur("payload trop grand")
+    }
+    if len(buf) < pos + 4 + taille_payload {
+        return WebSocketAnalyse.WebSocketIncomplet
+    }
+
+    let masque_cle = bytes_slice(buf, pos, 4)
+    pos = pos + 4
+    var payload = bytes_new()
+    var i = 0
+    while i < taille_payload {
+        bytes_push(payload, bit_xor(bytes_get(buf, pos + i), bytes_get(masque_cle, i % 4)))
+        i = i + 1
+    }
+    return WebSocketAnalyse.WebSocketFrameOk(WebSocketFrame { fin: fin, opcode: opcode, payload: payload, taille: pos + taille_payload })
+}
+
+fn websocket_payload_texte(frame: WebSocketFrame) -> Option<Text> {
+    if frame.opcode != 1 {
+        return none
+    }
+    return bytes_to_text(frame.payload)
+}

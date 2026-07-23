@@ -1,0 +1,16 @@
+// Point d'entrée du paquet : un seul import donne accès à tout.
+//
+//   import "nolc-discord::src/lib.nol"
+//
+// Réexporte :
+//   - Interactions HTTP (stdlib) : discord_dispatch, discord_reponse_message/_ephemere/_pong
+//   - Vérification Ed25519 (stdlib) : discord_verifie_ou_401, discord_signature_valide
+//   - Client WebSocket : ws_handshake_client, ws_frame_client*, ws_parse_serveur
+//   - REST : discord_rest, discord_envoie_message, http_statut
+//   - Gateway temps réel : gateway_run(token, intents, on_event)
+
+import "../vendor/discord.nol"
+import "../vendor/discord_sodium.nol"
+import "ws_client.nol"
+import "rest.nol"
+import "gateway.nol"

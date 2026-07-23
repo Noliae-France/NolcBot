@@ -1,0 +1,27 @@
+// Vérifie que la surface du paquet compile et lie (sans réseau).
+import "../src/lib.nol"
+
+fn on_ev(js: Text) -> Bool {
+    return contains(js, "MESSAGE_CREATE")
+}
+
+fn main() {
+    let _p = sodium_prete()
+    // Interactions (stdlib réexportée)
+    let r = discord_reponse_message("ok")
+    print("reponse: " + r.corps)
+    // WebSocket client + parse serveur (codec)
+    let f = ws_frame_client_texte("hi")
+    var taille = 0
+    match ws_parse_serveur(f, 65536) {
+        WebSocketFrameOk(fr) => taille = fr.taille
+        _ => taille = -1
+    }
+    print("frame taille: " + text(taille))
+    // Références typées (sans exécuter le réseau)
+    let _g: Fn(Text, Int, Fn(Text) -> Bool) = gateway_run
+    let _h: Fn(Text) -> Bool = on_ev
+    let _e: Fn(Text, Text, Text) -> Bool = discord_envoie_message
+    let _c: Fn(Text, Text, Text) -> Bool = discord_enregistrer_commandes
+    print("selftest ok")
+}

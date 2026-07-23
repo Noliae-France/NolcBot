@@ -1,0 +1,103 @@
+// Client REST Discord minimal, sur TLS (lib/tls.nol) parce que l'API exige un
+// en-tête « Authorization: Bot <token> » que le client HTTP haut niveau ne
+// permet pas. Sert à enregistrer les slash-commands (PUT .../commands).
+//
+// Compilation : --lien ssl --lien crypto (+ chemins OpenSSL).
+
+// Poste un message dans un salon (utilisé par le mode Gateway pour répondre
+// aux messages non-slash). true si Discord accepte (200/201).
+fn discord_envoie_message(token: Text, salon: Text, contenu: Text) -> Bool {
+    let corps = "{\"content\":" + json_texte(contenu) + "}"
+    let ro = discord_rest("POST", "/api/v10/channels/" + salon + "/messages", token, corps)
+    if not has(ro) {
+        return false
+    }
+    let code = http_statut(unwrap_or(ro, ""))
+    return code == 200 or code == 201
+}
+
+// Envoie une requête HTTPS à discord.com et renvoie la réponse HTTP brute.
+fn discord_rest(methode: Text, chemin: Text, token: Text, corps: Text) -> Option<Text> {
+    let fdo = tcp_connect("discord.com", 443)
+    if not has(fdo) {
+        return none
+    }
+    let fd = unwrap_or(fdo, -1)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) {
+        tcp_close(fd)
+        return none
+    }
+    let ctx = unwrap_or(ctxo, ptr_null())
+    let sslo = tls_connecter(ctx, fd, "discord.com")
+    if not has(sslo) {
+        tcp_close(fd)
+        return none
+    }
+    let ssl = unwrap_or(sslo, ptr_null())
+
+    var req = methode + " " + chemin + " HTTP/1.1\r\n"
+    req += "Host: discord.com\r\n"
+    req += "Authorization: Bot " + token + "\r\n"
+    req += "User-Agent: DiscordBot (https://github.com/Noliae-France/nolc, 1.0)\r\n"
+    req += "Content-Type: application/json\r\n"
+    req += "Content-Length: " + text(len(corps)) + "\r\n"
+    req += "Connection: close\r\n\r\n"
+    req += corps
+    let _n = tls_ecrire(ssl, req)
+
+    var rep = ""
+    var lectures = 0
+    while lectures < 512 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" {
+            break
+        }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    return some(rep)
+}
+
+// Code de statut d'une réponse HTTP brute (« HTTP/1.1 200 OK »). -1 si illisible.
+fn http_statut(reponse: Text) -> Int {
+    let sp = find(reponse, " ")
+    if not has(sp) {
+        return -1
+    }
+    let i = unwrap_or(sp, 0)
+    let reste = sub(reponse, i + 1, len(reponse))
+    let sp2 = find(reste, " ")
+    var fin = len(reste)
+    if has(sp2) {
+        fin = unwrap_or(sp2, fin)
+    }
+    return unwrap_or(parse_int(sub(reste, 0, fin)), -1)
+}
+
+// Enregistre (remplace) l'ensemble des slash-commands globales de l'application.
+// `corps_commandes` = tableau JSON des commandes (fourni par l'application).
+// PUT écrase la liste complète. Propagation Discord : jusqu'à ~1 h en global.
+fn discord_enregistrer_commandes(app_id: Text, token: Text, corps_commandes: Text) -> Bool {
+    let chemin = "/api/v10/applications/" + app_id + "/commands"
+    let ro = discord_rest("PUT", chemin, token, corps_commandes)
+    if not has(ro) {
+        print("Échec réseau/TLS vers discord.com")
+        return false
+    }
+    let reponse = unwrap_or(ro, "")
+    let code = http_statut(reponse)
+    print("Discord a répondu : HTTP " + text(code))
+    if code == 200 or code == 201 {
+        return true
+    }
+    // Affiche le corps d'erreur pour diagnostic (token/app_id/quota).
+    let sep = find(reponse, "\r\n\r\n")
+    if has(sep) {
+        let d = unwrap_or(sep, 0) + 4
+        print("Corps : " + sub(reponse, d, len(reponse)))
+    }
+    return false
+}

@@ -1,0 +1,30 @@
+// Vérification Ed25519 Discord via libsodium.
+//
+// À lier avec `--lien sodium`. Le module `discord.nol` reste pur HTTP/JSON ;
+// celui-ci ajoute la validation cryptographique obligatoire en production.
+
+import "crypto.nol"
+import "discord.nol"
+import "sodium.nol"
+import "web.nol"
+
+fn discord_signature_valide(req: Requete, cle_publique_hex: Text) -> Bool {
+    let sig_hex = requete_entete(req, "X-Signature-Ed25519")
+    let message = discord_message_signature(req)
+    if not has(sig_hex) or not has(message) {
+        return false
+    }
+    let sig = hex_decode(unwrap_or(sig_hex, ""))
+    let pk = hex_decode(cle_publique_hex)
+    if not has(sig) or not has(pk) {
+        return false
+    }
+    return sign_verifie(unwrap_or(sig, bytes_new()), bytes_from_text(unwrap_or(message, "")), unwrap_or(pk, bytes_new()))
+}
+
+fn discord_verifie_ou_401(req: Requete, cle_publique_hex: Text) -> Option<Reponse> {
+    if discord_signature_valide(req, cle_publique_hex) {
+        return none
+    }
+    return some(discord_reponse_401(req))
+}

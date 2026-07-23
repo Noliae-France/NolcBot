@@ -1,0 +1,175 @@
+// Client Discord Gateway (WebSocket temps réel) — brique réutilisable.
+//
+// Générique : `gateway_run` reçoit un handler `Fn(Text) -> Bool` appelé pour
+// chaque événement de dispatch (op 0) avec le payload JSON complet
+// (`{"t":...,"d":...,"op":0,"s":...}`). L'application filtre sur `t` et agit
+// (ex. répondre via discord_envoie_message). La valeur de retour du handler
+// est ignorée (elle sert seulement à typer le callback).
+//
+// Framing client via ws_client.nol ; I/O binaire via tls_ecrire_bytes (builtin)
+// et tls_lire_bytes (vendor/tls.nol).
+//
+// Opcodes Gateway : 0 dispatch, 1 heartbeat, 2 identify, 10 hello, 11 ack.
+
+import "ws_client.nol"
+import "../vendor/json.nol"
+
+// État de connexion porté entre itérations. Le buffer est un champ Bytes :
+// chaque itération le renvoie recopié hors de sa région -> mémoire bornée.
+// (Un Fn ne peut PAS être un champ de record ; le handler est passé à part.)
+record GwEtat {
+    buf: Bytes,
+    seq: Int,
+    intervalle: Int,
+    identifie: Bool,
+    dernier_hb: Int,
+    derniere_activite: Int,
+    vivant: Bool
+}
+
+fn gw_identify(token: Text, intents: Int) -> Text {
+    return "{\"op\":2,\"d\":{\"token\":" + json_texte(token)
+        + ",\"intents\":" + text(intents)
+        + ",\"properties\":{\"os\":\"linux\",\"browser\":\"nolc\",\"device\":\"nolc\"}}}"
+}
+
+fn gw_heartbeat(seq: Int) -> Text {
+    if seq < 0 {
+        return "{\"op\":1,\"d\":null}"
+    }
+    return "{\"op\":1,\"d\":" + text(seq) + "}"
+}
+
+// Une itération : lit un bloc, draine toutes les frames complètes, appelle le
+// handler sur les événements, envoie le heartbeat si dû. Renvoie l'état mis à
+// jour (buffer recopié -> pas d'accumulation mémoire).
+fn gw_iteration(ssl: Ptr<TlsSession>, token: Text, intents: Int, on_event: Fn(Text) -> Bool, e: GwEtat) -> GwEtat {
+    var buf = e.buf
+    var seq = e.seq
+    var intervalle = e.intervalle
+    var identifie = e.identifie
+    var dernier_hb = e.dernier_hb
+    var derniere_activite = e.derniere_activite
+    var vivant = e.vivant
+
+    let mo = tls_lire_bytes(ssl)
+    if has(mo) {
+        bytes_append(buf, unwrap_or(mo, bytes_new()))
+        derniere_activite = mono_ms()
+    }
+
+    var encore = true
+    while encore {
+        let a = ws_parse_serveur(buf, 4194304)
+        var consomme = 0
+        var opcode = -1
+        var js = ""
+        match a {
+            WebSocketFrameOk(f) => {
+                consomme = f.taille
+                opcode = f.opcode
+                js = unwrap_or(bytes_to_text(f.payload), "")
+            }
+            WebSocketIncomplet => encore = false
+            WebSocketErreur(_e) => {
+                encore = false
+                vivant = false
+            }
+        }
+        if consomme == 0 {
+            encore = false
+        } else {
+            buf = bytes_slice(buf, consomme, len(buf) - consomme)
+            if opcode == 8 {
+                vivant = false
+            } else if opcode == 9 {
+                let _p = tls_ecrire_bytes(ssl, ws_frame_client(10, bytes_new()))
+            } else if opcode == 1 or opcode == 2 {
+                let op = unwrap_or(json_int_champ(js, "op"), -1)
+                if op == 10 {
+                    intervalle = unwrap_or(json_chemin_int(js, "d.heartbeat_interval"), 45000)
+                    let _i = tls_ecrire_bytes(ssl, ws_frame_client_texte(gw_identify(token, intents)))
+                    identifie = true
+                    dernier_hb = mono_ms()
+                } else if op == 0 {
+                    let s = json_int_champ(js, "s")
+                    if has(s) {
+                        seq = unwrap_or(s, seq)
+                    }
+                    let _h = on_event(js)
+                } else if op == 1 {
+                    let _hb = tls_ecrire_bytes(ssl, ws_frame_client_texte(gw_heartbeat(seq)))
+                    dernier_hb = mono_ms()
+                }
+            }
+        }
+    }
+
+    let maintenant = mono_ms()
+    if identifie and intervalle > 0 and maintenant - dernier_hb >= intervalle {
+        let _h = tls_ecrire_bytes(ssl, ws_frame_client_texte(gw_heartbeat(seq)))
+        dernier_hb = maintenant
+    }
+    if maintenant - derniere_activite > 90000 {
+        print("Gateway silencieuse > 90 s — arrêt.")
+        vivant = false
+    }
+
+    return GwEtat { buf: buf, seq: seq, intervalle: intervalle, identifie: identifie, dernier_hb: dernier_hb, derniere_activite: derniere_activite, vivant: vivant }
+}
+
+// Boucle Gateway complète : connexion WSS -> handshake -> HELLO/IDENTIFY ->
+// heartbeat + événements (chaque dispatch passé à `on_event`), jusqu'à fermeture.
+fn gateway_run(token: Text, intents: Int, on_event: Fn(Text) -> Bool) {
+    let fdo = tcp_connect("gateway.discord.gg", 443)
+    if not has(fdo) {
+        print("Connexion TCP à gateway.discord.gg impossible.")
+        return
+    }
+    let fd = unwrap_or(fdo, -1)
+    // Timeout court : rythme la boucle pour placer les heartbeats sans thread.
+    tcp_set_timeout(fd, 1000)
+
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) {
+        tcp_close(fd)
+        print("Contexte TLS client indisponible.")
+        return
+    }
+    let ctx = unwrap_or(ctxo, ptr_null())
+    let sslo = tls_connecter(ctx, fd, "gateway.discord.gg")
+    if not has(sslo) {
+        tcp_close(fd)
+        print("Handshake TLS échoué.")
+        return
+    }
+    let ssl = unwrap_or(sslo, ptr_null())
+
+    let ho = ws_handshake_client(ssl, "gateway.discord.gg", "/?v=10&encoding=json")
+    if not has(ho) {
+        tls_fermer(ssl)
+        tcp_close(fd)
+        print("Handshake WebSocket échoué.")
+        return
+    }
+    print("Gateway WSS connectée. En attente du HELLO…")
+
+    let maintenant = mono_ms()
+    var etat = GwEtat {
+        buf: unwrap_or(ho, bytes_new()),
+        seq: -1,
+        intervalle: 0,
+        identifie: false,
+        dernier_hb: maintenant,
+        derniere_activite: maintenant,
+        vivant: true
+    }
+    while etat.vivant {
+        etat = gw_iteration(ssl, token, intents, on_event, etat)
+    }
+
+    let _c = tls_ecrire_bytes(ssl, ws_frame_client_close())
+    tls_fermer(ssl)
+    tcp_close(fd)
+    print("Gateway fermée.")
+}
