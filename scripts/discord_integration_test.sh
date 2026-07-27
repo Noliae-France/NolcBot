@@ -31,6 +31,34 @@ if [ "$missing" -ne 0 ]; then
   exit 1
 fi
 
+validate_snowflake() {
+  local name="$1"
+  local value="$2"
+  if ! printf '%s' "$value" | grep -Eq '^[0-9]{17,20}$'; then
+    echo "::error::$name doit contenir uniquement l'identifiant Discord numérique brut, sans texte, sans espace, sans guillemets."
+    exit 1
+  fi
+}
+
+validate_hex() {
+  local name="$1"
+  local value="$2"
+  if ! printf '%s' "$value" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+    echo "::error::$name doit contenir uniquement la clé hexadécimale Discord de 64 caractères."
+    exit 1
+  fi
+}
+
+validate_snowflake "DISCORD_APP_ID" "$DISCORD_APP_ID"
+validate_snowflake "DISCORD_TEST_GUILD_ID" "$DISCORD_TEST_GUILD_ID"
+if [ -n "${DISCORD_CLIENT_ID:-}" ]; then
+  validate_snowflake "DISCORD_CLIENT_ID" "$DISCORD_CLIENT_ID"
+fi
+if [ -n "${DISCORD_TEST_CHANNEL_ID:-}" ]; then
+  validate_snowflake "DISCORD_TEST_CHANNEL_ID" "$DISCORD_TEST_CHANNEL_ID"
+fi
+validate_hex "DISCORD_PUBLIC_KEY" "$DISCORD_PUBLIC_KEY"
+
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 export NOLIAE_DB_PATH="$work_dir/nolcbot.sqlite3"
