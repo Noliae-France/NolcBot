@@ -17,31 +17,35 @@
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Security" src="https://img.shields.io/badge/secrets-scanned-success"></a>
 </p>
 
+<p align="center">
+  <strong>🛡️ Modération</strong> · <strong>🎫 Tickets</strong> · <strong>🤖 IA</strong> · <strong>📊 Stats</strong> · <strong>🔌 Intégrations</strong> · <strong>🧰 Dashboard</strong>
+</p>
+
 ---
 
 NolcBot est un bot Discord natif basé sur le client [`nolc-discord`](https://github.com/Noliae-France/nolc-discord). Il vise une architecture propre : core léger, commandes par modules, configuration persistée en base, dashboard web, audit, automatisations, intégrations et assistants IA avec confirmation humaine pour les actions sensibles.
 
 > L’édition de ce dépôt est le mode **OSS / self-host**. Le mode **SaaS** commercial avec licences payantes est décrit plus bas comme architecture cible séparée.
 
-## Vision
+## ✨ Vision
 
 NolcBot veut rester simple à héberger, mais sérieux techniquement : un bot modulaire, configurable depuis Discord ou le dashboard, avec audit, permissions, intégrations, assistants IA et CI/CD propre. L’objectif n’est pas d’avoir un gros fichier magique impossible à maintenir, mais un bot que l’on peut faire évoluer module par module.
 
-## Fonctionnalités clés
+## 🚀 Fonctionnalités clés
 
 | Domaine | Ce que NolcBot apporte |
 | --- | --- |
-| Administration | ACL, groupes, rôles réels Discord, configuration SQLite, dashboard web |
-| Modération | ban, kick, mute, warn, sanctions, notes privées, clear, slowmode, automod |
-| Communauté | accueil, départs, FAQ, annonces, onboarding, idées d’événements |
-| Tickets | création, participants, fermeture, anti-abus et audit |
-| IA | ChatGPT/OpenAI, Gemini, Mistral, FAQ IA, assistant admin et assistant modération avec confirmation humaine |
-| Intégrations | Twitch, YouTube, GitHub, Reddit, RSS, calendriers, statut de site |
-| Utilitaires | profils, serveur, rôles, salons, avatar, QR, météo, traduction, rappels, timestamps |
-| Jeux & fun | dés, pile ou face, 8-ball, quiz, devinettes, memes, morpion, compatibilité |
-| Observabilité | `/health`, `/metrics`, audit SQLite, rapports stats, artefacts CI |
+| 🛠️ Administration | ACL, groupes, rôles réels Discord, configuration SQLite, dashboard web |
+| 🛡️ Modération | ban, kick, mute, warn, sanctions, notes privées, clear, slowmode, automod |
+| 💬 Communauté | accueil, départs, FAQ, annonces, onboarding, idées d’événements |
+| 🎫 Tickets | création, participants, fermeture, anti-abus et audit |
+| 🤖 IA | ChatGPT/OpenAI, Gemini, Mistral, FAQ IA, assistant admin et assistant modération avec confirmation humaine |
+| 🔌 Intégrations | Twitch, YouTube, GitHub, Reddit, RSS, calendriers, statut de site |
+| 🧰 Utilitaires | profils, serveur, rôles, salons, avatar, QR, météo, traduction, rappels, timestamps |
+| 🎲 Jeux & fun | dés, pile ou face, 8-ball, quiz, devinettes, memes, morpion, compatibilité |
+| 📊 Observabilité | `/health`, `/metrics`, audit SQLite, rapports stats, artefacts CI |
 
-## Architecture rapide
+## 🧱 Architecture rapide
 
 ```text
 NolcBot
@@ -58,7 +62,7 @@ NolcBot
 
 Les seuls secrets obligatoires en environnement sont `DISCORD_APP_ID` et `DISCORD_BOT_TOKEN`. Le reste de la configuration serveur est stocké en SQLite et administrable sans modifier `.env`.
 
-## CI/CD et releases
+## ⚙️ CI/CD et releases
 
 La CI publique est découpée pour garder des checks GitHub propres :
 
@@ -68,7 +72,7 @@ Pipeline :
 - [`discord-integration`](.github/workflows/discord-integration.yml) : lancement manuel uniquement, utilise les **GitHub Secrets** pour tester SQLite, l’API Discord, l’application, le serveur de test, la présence du bot, l’enregistrement des commandes, une connexion Gateway courte et OpenAI si la clé est fournie.
 - [`release`](.github/workflows/release.yml) : sur tag `v*`, recompile, reteste, prépare l’artefact Linux et crée une GitHub Release.
 
-Secrets GitHub attendus pour le smoke test Discord :
+🔐 Secrets GitHub attendus pour le smoke test Discord :
 
 | Secret GitHub | Usage |
 | --- | --- |
@@ -82,14 +86,14 @@ Secrets GitHub attendus pour le smoke test Discord :
 
 Ne jamais écrire ces valeurs dans le repo, dans les logs, dans le README ou dans un fichier `.env` versionné. Si une clé a été partagée en clair, elle doit être régénérée avant usage.
 
-Créer une release :
+🏷️ Créer une release :
 
 ```sh
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-## Build Linux
+## 🐧 Build Linux
 
 `./build.sh` détecte Linux (`pkg-config` ou chemins système). Dépendances requises : Nolc, OpenSSL 3, libsodium et SQLite3.
 
@@ -120,14 +124,14 @@ Les administrateurs peuvent modifier un salon avec `/channel_edit salon champ va
 
 `/define mot` interroge ponctuellement l’API publique Dictionary API pour une définition en anglais. Le mot est limité à 64 caractères alphabétiques et n’est pas conservé par le bot.
 
-## Compiler
+## 🏗️ Compiler
 
 ```sh
 nolc pkg install
 nolc build . -o bot
 ```
 
-## Configurer Discord
+## 🔧 Configurer Discord
 
 Variables utilisées : `DISCORD_APP_ID` et `DISCORD_BOT_TOKEN`. La clé publique Discord est conservée dans SQLite après `./bot setup-public-key <cle>`.
 
@@ -137,7 +141,7 @@ Copier `.env.example` vers un fichier local non versionné et renseigner les val
 ./check.sh
 ```
 
-### Sécurité et données
+### 🔒 Sécurité et données
 
 - Ne jamais versionner `.env`, tokens, clés IA, webhooks ou bases SQLite de production.
 - Les clés contenant `token`, `secret`, `password`, `private`, `credential`, `api_key` ou `webhook` sont refusées côté commandes/dashboard lorsqu’elles ne doivent pas être exposées.
@@ -146,7 +150,7 @@ Copier `.env.example` vers un fichier local non versionné et renseigner les val
 - Les données personnelles activées par le bot peuvent être exportées ou supprimées avec les commandes dédiées.
 - Les appels IA, traduction, météo, QR et intégrations externes peuvent transmettre le contenu demandé au fournisseur configuré.
 
-### Déploiement recommandé
+### 🚢 Déploiement recommandé
 
 - utilisateur système dédié ;
 - reverse proxy HTTPS devant l’endpoint Discord ;
@@ -155,13 +159,13 @@ Copier `.env.example` vers un fichier local non versionné et renseigner les val
 - surveillance via `/health` et `/metrics` ;
 - GitHub Actions vert avant mise en production.
 
-## Mode SaaS pour hébergeurs
+## 💼 Mode SaaS pour hébergeurs
 
 L’édition présente dans ce dépôt correspond au mode **OSS / self-host** : elle permet d’héberger soi-même un bot dédié, avec SQLite, sans plateforme commerciale intégrée.
 
 Le mode **SaaS** est une édition commerciale séparée, destinée aux hébergeurs de bots Discord, plateformes communautaires ou offres managées. Il n’est pas gratuit : chaque client, serveur ou offre hébergeur doit être couvert par une licence active. L’objectif est de fournir un bot mutualisé, piloté depuis un dashboard unique, tout en isolant proprement chaque serveur Discord et chaque client.
 
-Principes du mode SaaS proposé :
+🧩 Principes du mode SaaS proposé :
 
 - **Base de données PostgreSQL** : remplacer l’adaptateur SQLite local par un stockage PostgreSQL centralisé, compatible multi-instance, migrations contrôlées, sauvegardes automatisées et restauration par tenant.
 - **Bot mutualisé** : un même processus ou cluster Noliae peut servir plusieurs serveurs Discord, avec une configuration séparée par `guild_id` et, si nécessaire, par `tenant_id` hébergeur.
@@ -172,14 +176,14 @@ Principes du mode SaaS proposé :
 - **Scalabilité** : le mode SaaS doit prévoir workers Gateway, workers de notifications, file d’attente pour les actions massives, cache applicatif et métriques Prometheus par tenant.
 - **Conformité et sécurité** : suppression des données personnelles sur demande, politique de conservation, rotation des secrets, quotas par offre et exports contrôlés.
 
-Modèle de licence cible :
+💳 Modèle de licence cible :
 
 - **OSS / self-host** : utilisation autonome, base SQLite, dashboard local, configuration par serveur, sans garantie commerciale ni infrastructure mutualisée.
 - **SaaS Starter** : licence payante pour petites communautés, nombre limité de serveurs/membres, modules essentiels, dashboard hébergé.
 - **SaaS Pro** : limites plus hautes, intégrations externes avancées, IA, statistiques étendues, overlays personnalisés et support prioritaire.
 - **SaaS Host / Enterprise** : offre pour hébergeurs, multi-clients, PostgreSQL dédié ou mutualisé, SSO, marque blanche, SLA, audit avancé et quotas personnalisés.
 
-Architecture cible :
+🏢 Architecture cible :
 
 - `DISCORD_APP_ID` et `DISCORD_BOT_TOKEN` restent des secrets d’infrastructure, jamais configurables depuis Discord.
 - Toutes les autres options serveur sont stockées en base, modifiables depuis Discord ou depuis le dashboard.
@@ -198,7 +202,7 @@ Sauvegarder et restaurer la base :
 
 En production, `deploy/noliae-backup.service.example` et `deploy/noliae-backup.timer.example` fournissent un timer systemd quotidien avec rattrapage après redémarrage.
 
-## ACL par rôles Discord
+## 🧑‍⚖️ ACL par rôles Discord
 
 Le contrôle des permissions est actif pour les commandes de modération. Le propriétaire du serveur est toujours autorisé. Pour un premier déploiement, associez les permissions aux identifiants de rôles Discord réels via les variables dédiées :
 
