@@ -1,0 +1,61 @@
+import "nolc-discord::src/lib.nol"
+import "moderation.nol"
+import "tickets.nol"
+import "community.nol"
+import "utility.nol"
+import "ai.nol"
+import "forms.nol"
+import "stats.nol"
+import "economy.nol"
+import "fun.nol"
+import "channels.nol"
+import "integrations.nol"
+import "ai_admin.nol"
+import "ai_moderation.nol"
+
+// Contrat commun des modules de commandes.
+// Chaque module spécialisé sera branché ici au fur et à mesure de son extraction.
+fn commande_module(nom: Text) -> Text {
+    if nom == "ban" or nom == "kick" or nom == "unban" or nom == "mute" or nom == "unmute" or nom == "warn" or nom == "clear" or nom == "slowmode" or nom == "lock" or nom == "unlock" or nom == "nickname" or nom == "role_temp" { return "moderation" }
+    if nom == "ticket" or nom == "ticket_close" or nom == "ticket_add" or nom == "ticket_remove" or nom == "ticket_claim" or nom == "ticket_unclaim" or nom == "ticket_transcript" or nom == "ticket_priority" { return "tickets" }
+    if nom == "announce" or nom == "faq" or nom == "community_event_ideas" or nom == "community_rules" or nom == "community_onboarding" or nom == "community_announce_ai" or nom == "community_faq_ai_add" or nom == "community_confirm" or nom == "poll" or nom == "poll_vote" or nom == "poll_close" or nom == "report" or nom == "suggest" or nom == "suggest_status" or nom == "partnership" { return "community" }
+    if nom == "daily" or nom == "weekly" or nom == "balance" or nom == "work" or nom == "shop" or nom == "buy" or nom == "inventory" or nom == "give" or nom == "transactions" or nom == "pay" { return "economy" }
+    if nom == "roll" or nom == "coin" or nom == "8ball" or nom == "pfc" or nom == "joke" or nom == "meme" or nom == "meme_add" or nom == "meme_remove" or nom == "meme_list" or nom == "quote" or nom == "riddle" or nom == "quiz" or nom == "challenge" or nom == "morpion" or nom == "compatibility" or nom == "choose" or nom == "profile" or nom == "achievements" or nom == "xp_leaderboard" or nom == "xp_reset" { return "fun" }
+    if nom == "stats" or nom == "stats_report" or nom == "stats_csv" or nom == "logs_csv" { return "stats" }
+    if nom == "avatar" or nom == "banner" or nom == "timestamp" or nom == "timezone" or nom == "calc" or nom == "convert" or nom == "password" or nom == "qr" or nom == "weather" or nom == "define" or nom == "remind" or nom == "reminders" { return "utility" }
+    if nom == "channel_edit" or nom == "channel_sync_config" { return "channels" }
+    if nom == "ai" or nom == "summarize" or nom == "rewrite" or nom == "ideas" or nom == "faq_ai" { return "ai" }
+    if nom == "rss" or nom == "rss_subscribe" or nom == "rss_unsubscribe" or nom == "calendar" or nom == "calendar_subscribe" or nom == "calendar_unsubscribe" or nom == "youtube_subscribe" or nom == "youtube_list" or nom == "github_subscribe" or nom == "reddit_subscribe" or nom == "twitch_status" or nom == "twitch_subscribe" or nom == "twitch_unsubscribe" or nom == "twitch_list" { return "integrations" }
+    return "core"
+}
+
+// Point d'entrée unique du routage métier. Chaque module répond `none` quand
+// la commande ne lui appartient pas, ce qui permet d'ajouter les domaines
+// progressivement sans dépendance circulaire.
+fn router_commande(req: Requete, nom: Text) -> Option<Reponse> {
+    let moderation = commande_moderation(req, nom)
+    if has(moderation) { return moderation }
+    let tickets = commande_tickets(req, nom)
+    if has(tickets) { return tickets }
+    let community = commande_community(req, nom)
+    if has(community) { return community }
+    let utility = commande_utility(req, nom)
+    if has(utility) { return utility }
+    let ia = commande_ai(req, nom)
+    if has(ia) { return ia }
+    let formulaires = commande_formulaires(req, nom)
+    if has(formulaires) { return formulaires }
+    let statistiques = commande_stats(req, nom)
+    if has(statistiques) { return statistiques }
+    let economie = commande_economie(req, nom)
+    if has(economie) { return economie }
+    let fun = commande_fun(req, nom)
+    if has(fun) { return fun }
+    let channels = commande_channels(req, nom)
+    if has(channels) { return channels }
+    let integrations = commande_integrations(req, nom)
+    if has(integrations) { return integrations }
+    let aiadmin = commande_ai_admin(req, nom)
+    if has(aiadmin) { return aiadmin }
+    return commande_ai_moderation(req, nom)
+}

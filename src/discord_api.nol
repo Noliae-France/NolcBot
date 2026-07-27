@@ -1,0 +1,401 @@
+// Opérations Discord nécessitant un appel REST authentifié.
+import "nolc-discord::src/lib.nol"
+import "time.nol"
+import "store.nol"
+
+fn bot_token() -> Option<Text> { return env("DISCORD_BOT_TOKEN") }
+
+fn interaction_guild(req: Requete) -> Text {
+    return unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+}
+
+fn interaction_cible(req: Requete) -> Text {
+    return unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+}
+
+fn discord_bannir(req: Requete) -> Bool {
+    let tok = bot_token()
+    let guild = interaction_guild(req)
+    let user = interaction_cible(req)
+    if not has(tok) or guild == "" or user == "" { return false }
+    let rep = discord_rest("PUT", "/api/v10/guilds/" + guild + "/bans/" + user, unwrap_or(tok, ""), "{}")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}
+
+fn discord_expulser(req: Requete) -> Bool {
+    let tok = bot_token()
+    let guild = interaction_guild(req)
+    let user = interaction_cible(req)
+    if not has(tok) or guild == "" or user == "" { return false }
+    let rep = discord_rest("DELETE", "/api/v10/guilds/" + guild + "/members/" + user, unwrap_or(tok, ""), "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}
+
+fn discord_expulser_identifiant(token: Text, guild: Text, user: Text) -> Bool {
+    if token == "" or guild == "" or user == "" { return false }
+    let rep = discord_rest("DELETE", "/api/v10/guilds/" + guild + "/members/" + user, token, "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}
+
+fn discord_bannir_identifiant(token: Text, guild: Text, user: Text) -> Bool {
+    if token == "" or guild == "" or user == "" { return false }
+    let rep = discord_rest("PUT", "/api/v10/guilds/" + guild + "/bans/" + user, token, "{}")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}
+
+fn discord_debannir(req: Requete) -> Bool {
+    let tok = bot_token()
+    let guild = interaction_guild(req)
+    let user = interaction_cible(req)
+    if not has(tok) or guild == "" or user == "" { return false }
+    let rep = discord_rest("DELETE", "/api/v10/guilds/" + guild + "/bans/" + user, unwrap_or(tok, ""), "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}
+
+fn discord_debannir_identifiant(token: Text, guild: Text, user: Text) -> Bool {
+    if token == "" or guild == "" or user == "" { return false }
+    let rep = discord_rest("DELETE", "/api/v10/guilds/" + guild + "/bans/" + user, token, "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}
+
+fn discord_timeout(req: Requete, secondes: Int) -> Bool {
+    let tok = bot_token()
+    let guild = interaction_guild(req)
+    let user = interaction_cible(req)
+    if not has(tok) or guild == "" or user == "" or secondes < 0 { return false }
+    let fin = epoch_maintenant() + secondes
+    var corps = "{\"communication_disabled_until\":null}"
+    if secondes > 0 { corps = "{\"communication_disabled_until\":\"" + iso8601(fin) + "\"}" }
+    let rep = discord_rest("PATCH", "/api/v10/guilds/" + guild + "/members/" + user, unwrap_or(tok, ""), corps)
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200
+}
+
+fn discord_timeout_identifiant(token: Text, guild: Text, user: Text, secondes: Int) -> Bool {
+    if token == "" or guild == "" or user == "" or secondes < 0 { return false }
+    let fin = epoch_maintenant() + secondes
+    var corps = "{\"communication_disabled_until\":null}"
+    if secondes > 0 { corps = "{\"communication_disabled_until\":\"" + iso8601(fin) + "\"}" }
+    let rep = discord_rest("PATCH", "/api/v10/guilds/" + guild + "/members/" + user, token, corps)
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200
+}
+
+fn discord_modifier_surnom(req: Requete, surnom: Text) -> Bool {
+    let tok = bot_token()
+    let guild = interaction_guild(req)
+    let user = interaction_cible(req)
+    if not has(tok) or guild == "" or user == "" or len(surnom) > 32 { return false }
+    let corps = "{\"nick\":" + json_texte(surnom) + "}"
+    let rep = discord_rest("PATCH", "/api/v10/guilds/" + guild + "/members/" + user, unwrap_or(tok, ""), corps)
+    if not has(rep) { return false }
+    return http_statut(unwrap_or(rep, "")) == 200
+}
+
+fn discord_slowmode(req: Requete, secondes: Int) -> Bool {
+    let tok = bot_token()
+    let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+    if not has(tok) or salon == "" or secondes < 0 or secondes > 21600 { return false }
+    let corps = "{\"rate_limit_per_user\":" + text(secondes) + "}"
+    let rep = discord_rest("PATCH", "/api/v10/channels/" + salon, unwrap_or(tok, ""), corps)
+    if not has(rep) { return false }
+    return http_statut(unwrap_or(rep, "")) == 200
+}
+
+fn discord_modifier_salon(token: Text, salon: Text, champ: Text, valeur: Text) -> Bool {
+    if token == "" or salon == "" or champ == "" { return false }
+    var corps = "{}"
+    if champ == "name" {
+        if valeur == "" or len(valeur) > 100 { return false }
+        corps = "{\"name\":" + json_texte(valeur) + "}"
+    }
+    if champ == "topic" {
+        if len(valeur) > 1024 { return false }
+        corps = "{\"topic\":" + json_texte(valeur) + "}"
+    }
+    if champ == "slowmode" {
+        let secondes = unwrap_or(parse_int(valeur), -1)
+        if secondes < 0 or secondes > 21600 { return false }
+        corps = "{\"rate_limit_per_user\":" + text(secondes) + "}"
+    }
+    if champ == "nsfw" {
+        if valeur != "true" and valeur != "false" { return false }
+        corps = "{\"nsfw\":" + valeur + "}"
+    }
+    if champ == "category" {
+        corps = "{\"parent_id\":" + json_texte(valeur) + "}"
+    }
+    if champ == "position" {
+        let position = unwrap_or(parse_int(valeur), -1)
+        if position < 0 { return false }
+        corps = "{\"position\":" + text(position) + "}"
+    }
+    if corps == "{}" { return false }
+    let rep = discord_rest("PATCH", "/api/v10/channels/" + salon, token, corps)
+    if not has(rep) { return false }
+    return http_statut(unwrap_or(rep, "")) == 200
+}
+
+fn discord_supprimer_message(token: Text, salon: Text, message: Text) -> Bool {
+    if salon == "" or message == "" { return false }
+    let rep = discord_rest("DELETE", "/api/v10/channels/" + salon + "/messages/" + message, token, "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 204 or code == 200
+}
+
+fn discord_supprimer_messages(token: Text, salon: Text, limite: Int) -> Int {
+    if token == "" or salon == "" or limite < 2 or limite > 100 { return 0 }
+    let rep = discord_rest("GET", "/api/v10/channels/" + salon + "/messages?limit=" + text(limite), token, "")
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 200 { return 0 }
+    let brut = unwrap_or(rep, "")
+    let separateur = find(brut, "\r\n\r\n")
+    if not has(separateur) { return 0 }
+    let corps = sub(brut, unwrap_or(separateur, 0) + 4, len(brut) - unwrap_or(separateur, 0) - 4)
+    var ids = "["
+    var trouve = 0
+    var index = 0
+    while index < limite {
+        let identifiant = json_chemin_texte(corps, text(index) + ".id")
+        if not has(identifiant) { break }
+        if trouve > 0 { ids += "," }
+        ids += json_texte(unwrap_or(identifiant, ""))
+        trouve = trouve + 1
+        index = index + 1
+    }
+    ids += "]"
+    if trouve < 2 { return 0 }
+    let bulk = discord_rest("POST", "/api/v10/channels/" + salon + "/messages/bulk-delete", token, "{\"messages\":" + ids + "}")
+    if not has(bulk) or http_statut(unwrap_or(bulk, "")) != 204 { return 0 }
+    return trouve
+}
+
+fn discord_ajouter_role(token: Text, guild: Text, user: Text, role: Text) -> Bool {
+    if guild == "" or user == "" or role == "" { return false }
+    let rep = discord_rest("PUT", "/api/v10/guilds/" + guild + "/members/" + user + "/roles/" + role, token, "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 204 or code == 200
+}
+
+fn discord_retirer_role(token: Text, guild: Text, user: Text, role: Text) -> Bool {
+    if guild == "" or user == "" or role == "" { return false }
+    let rep = discord_rest("DELETE", "/api/v10/guilds/" + guild + "/members/" + user + "/roles/" + role, token, "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 204 or code == 200
+}
+
+fn discord_verrouiller_salon(req: Requete, verrou: Bool) -> Bool {
+    let tok = bot_token()
+    let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+    let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+    if not has(tok) or salon == "" or guild == "" { return false }
+    var corps = "{\"permission_overwrites\":[{\"id\":\"" + guild + "\",\"type\":0,\"allow\":\"0\",\"deny\":\"0\"}]}"
+    if verrou { corps = "{\"permission_overwrites\":[{\"id\":\"" + guild + "\",\"type\":0,\"allow\":\"0\",\"deny\":\"2048\"}]}" }
+    let rep = discord_rest("PATCH", "/api/v10/channels/" + salon, unwrap_or(tok, ""), corps)
+    if not has(rep) { return false }
+    return http_statut(unwrap_or(rep, "")) == 200
+}
+
+fn discord_notifier_log(token: Text, action: Text, cible: Text, raison: Text) -> Bool {
+    var cle = "NOLIAE_LOG_CHANNEL_ID"
+    if action == "BAN" or action == "KICK" or action == "UNBAN" or action == "MUTE" or action == "UNMUTE" or action == "LOCK" or action == "UNLOCK" or action == "WARN" or action == "CLEAR" or action == "SLOWMODE" { cle = "NOLIAE_MOD_LOG_CHANNEL_ID" }
+    if action == "REPORT" or action == "SUGGESTION" or action == "TICKET" or action == "POLL" { cle = "NOLIAE_COMMUNITY_LOG_CHANNEL_ID" }
+    if action == "AUTOMOD" or action == "RAID" or action == "ANTISPAM" { cle = "NOLIAE_SECURITY_LOG_CHANNEL_ID" }
+    var salon: Option<Text> = none
+    if not has(salon) { return false }
+    return discord_envoie_message(token, unwrap_or(salon, ""), "🛡️ **" + action + "**\nCible : " + cible + "\n" + raison)
+}
+
+fn discord_envoyer_webhook(token: Text, guild: Text, contenu: Text) -> Bool {
+    let url = store_lire(guild, "webhook.url")
+    if not has(url) or contenu == "" { return false }
+    let origine = "https://discord.com"
+    let adresse = unwrap_or(url, "")
+    if not starts_with(adresse, origine + "/api/webhooks/") { return false }
+    let chemin = sub(adresse, len(origine), len(adresse) - len(origine))
+    let rep = discord_rest("POST", chemin, token, "{\"content\":" + json_texte(contenu) + "}")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}
+
+fn discord_lister_invitations(token: Text, guild: Text) -> Option<Text> {
+    if token == "" or guild == "" { return none }
+    let rep = discord_rest("GET", "/api/v10/guilds/" + guild + "/invites", token, "")
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 200 { return none }
+    let brut = unwrap_or(rep, "")
+    let separateur = find(brut, "\r\n\r\n")
+    if not has(separateur) { return none }
+    let corps = sub(brut, unwrap_or(separateur, 0) + 4, len(brut) - unwrap_or(separateur, 0) - 4)
+    var sortie = ""
+    var i = 0
+    while i < 50 {
+        let code = json_chemin_texte(corps, text(i) + ".code")
+        if not has(code) { break }
+        let utilisations = unwrap_or(json_chemin_int(corps, text(i) + ".uses"), 0)
+        let createur = unwrap_or(json_chemin_texte(corps, text(i) + ".inviter.username"), "inconnu")
+        let createur_id = unwrap_or(json_chemin_texte(corps, text(i) + ".inviter.id"), "")
+        let ancien = store_observer_invitation(guild, unwrap_or(code, ""), utilisations, createur_id)
+        if createur_id == "" { let _suspect_sans_createur = store_log_action(guild, "system", "invite_suspect", unwrap_or(code, ""), "Créateur absent dans la réponse Discord") }
+        if ancien >= 0 and utilisations < ancien { let _suspect_compteur = store_log_action(guild, "system", "invite_suspect", unwrap_or(code, ""), "Compteur revenu en arrière") }
+        if ancien >= 0 and utilisations > ancien { let _audit_invite = store_log_action(guild, createur_id, "invite_use", unwrap_or(code, ""), text(ancien) + " -> " + text(utilisations)) }
+        sortie += "`" + unwrap_or(code, "") + "` — " + text(utilisations) + " utilisation(s), par **" + createur + "**\n"
+        i = i + 1
+    }
+    if sortie == "" { return some("Aucune invitation disponible.") }
+    return some(sortie)
+}
+
+// Crée un salon privé de support. Les identifiants sont contrôlés par Discord;
+// le bot ne fabrique jamais de permission à partir d'un nom fourni par l'utilisateur.
+fn discord_creer_ticket(req: Requete, sujet: Text) -> Bool {
+    let tok = bot_token()
+    let guild = interaction_guild(req)
+    let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+    if not has(tok) or guild == "" or user == "" { return false }
+    var permissions = "[{\"id\":\"" + guild + "\",\"type\":0,\"allow\":\"0\",\"deny\":\"1024\"},{\"id\":\"" + user + "\",\"type\":1,\"allow\":\"3072\",\"deny\":\"0\"}]"
+    let categorie = store_lire(guild, "ticket.category_id")
+    let staff = store_lire(guild, "ticket.staff_role_id")
+    if has(staff) { permissions = "[{\"id\":\"" + guild + "\",\"type\":0,\"allow\":\"0\",\"deny\":\"1024\"},{\"id\":\"" + user + "\",\"type\":1,\"allow\":\"3072\",\"deny\":\"0\"},{\"id\":\"" + unwrap_or(staff, "") + "\",\"type\":0,\"allow\":\"3072\",\"deny\":\"0\"}]" }
+    var corps = "{\"name\":\"ticket-" + user + "\",\"type\":0,\"permission_overwrites\":" + permissions
+    if has(categorie) { corps += ",\"parent_id\":\"" + unwrap_or(categorie, "") + "\"" }
+    corps += "}"
+    let rep = discord_rest("POST", "/api/v10/guilds/" + guild + "/channels", unwrap_or(tok, ""), corps)
+    if not has(rep) { return false }
+    if http_statut(unwrap_or(rep, "")) != 201 { return false }
+    let salon_logs = store_lire(guild, "log.channel")
+    if has(salon_logs) { let _msg = discord_envoie_message(unwrap_or(tok, ""), unwrap_or(salon_logs, ""), "🎫 Ticket créé pour <@" + user + "> : " + sujet) }
+    return true
+}
+
+fn discord_fermer_ticket(req: Requete) -> Bool {
+    let tok = bot_token()
+    let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+    if not has(tok) or salon == "" { return false }
+    let rep = discord_rest("DELETE", "/api/v10/channels/" + salon, unwrap_or(tok, ""), "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}
+
+fn discord_ticket_membre(req: Requete, membre: Text, ajouter: Bool) -> Bool {
+    let tok = bot_token()
+    let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+    if not has(tok) or salon == "" or membre == "" { return false }
+    let chemin = "/api/v10/channels/" + salon + "/permissions/" + membre
+    if ajouter {
+        let rep = discord_rest("PUT", chemin, unwrap_or(tok, ""), "{\"type\":1,\"allow\":\"3072\",\"deny\":\"0\"}")
+        if not has(rep) { return false }
+        return http_statut(unwrap_or(rep, "")) == 204
+    }
+    let rep = discord_rest("DELETE", chemin, unwrap_or(tok, ""), "")
+    if not has(rep) { return false }
+    return http_statut(unwrap_or(rep, "")) == 204
+}
+
+fn discord_ticket_transcription(req: Requete) -> Option<Text> {
+    let tok = bot_token()
+    let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+    if not has(tok) or salon == "" { return none }
+    let rep = discord_rest("GET", "/api/v10/channels/" + salon + "/messages?limit=100", unwrap_or(tok, ""), "")
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 200 { return none }
+    let brut = unwrap_or(rep, "")
+    let separateur = find(brut, "\r\n\r\n")
+    if not has(separateur) { return none }
+    let corps = sub(brut, unwrap_or(separateur, 0) + 4, len(brut) - unwrap_or(separateur, 0) - 4)
+    var sortie = "🧾 **Transcription du ticket**\n"
+    var index = 0
+    while index < 100 {
+        let contenu = json_chemin_texte(corps, text(index) + ".content")
+        let auteur = unwrap_or(json_chemin_texte(corps, text(index) + ".author.username"), "inconnu")
+        if not has(contenu) { break }
+        var ligne = "**" + auteur + "** : " + unwrap_or(contenu, "") + "\n"
+        if len(ligne) > 500 { ligne = sub(ligne, 0, 497) + "…\n" }
+        if len(sortie) + len(ligne) > 1850 { sortie += "… (transcription limitée aux messages récents)"; break }
+        sortie += ligne
+        index = index + 1
+    }
+    if index == 0 { return some(sortie + "Aucun message texte.") }
+    return some(sortie)
+}
+
+fn discord_creer_salon_vocal(token: Text, guild: Text, nom: Text, categorie: Text) -> Option<Text> {
+    if token == "" or guild == "" or nom == "" or len(nom) > 100 { return none }
+    var corps = "{\"name\":" + json_texte(nom) + ",\"type\":2"
+    if categorie != "" { corps += ",\"parent_id\":" + json_texte(categorie) }
+    corps += "}"
+    let rep = discord_rest("POST", "/api/v10/guilds/" + guild + "/channels", token, corps)
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 201 { return none }
+    let brut = unwrap_or(rep, "")
+    let separateur = find(brut, "\r\n\r\n")
+    if not has(separateur) { return none }
+    let body = sub(brut, unwrap_or(separateur, 0) + 4, len(brut) - unwrap_or(separateur, 0) - 4)
+    return json_chemin_texte(body, "id")
+}
+
+fn discord_creer_salon_texte(token: Text, guild: Text, nom: Text, categorie: Text) -> Option<Text> {
+    if token == "" or guild == "" or nom == "" or len(nom) > 100 { return none }
+    var corps = "{\"name\":" + json_texte(nom) + ",\"type\":0"
+    if categorie != "" { corps += ",\"parent_id\":" + json_texte(categorie) }
+    corps += "}"
+    let rep = discord_rest("POST", "/api/v10/guilds/" + guild + "/channels", token, corps)
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 201 { return none }
+    let brut = unwrap_or(rep, "")
+    let separateur = find(brut, "\r\n\r\n")
+    if not has(separateur) { return none }
+    let body = sub(brut, unwrap_or(separateur, 0) + 4, len(brut) - unwrap_or(separateur, 0) - 4)
+    return json_chemin_texte(body, "id")
+}
+
+fn discord_creer_categorie(token: Text, guild: Text, nom: Text) -> Option<Text> {
+    if token == "" or guild == "" or nom == "" or len(nom) > 100 { return none }
+    let rep = discord_rest("POST", "/api/v10/guilds/" + guild + "/channels", token, "{\"name\":" + json_texte(nom) + ",\"type\":4}")
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 201 { return none }
+    let brut = unwrap_or(rep, "")
+    let separateur = find(brut, "\r\n\r\n")
+    if not has(separateur) { return none }
+    let body = sub(brut, unwrap_or(separateur, 0) + 4, len(brut) - unwrap_or(separateur, 0) - 4)
+    return json_chemin_texte(body, "id")
+}
+
+fn discord_creer_role(token: Text, guild: Text, nom: Text) -> Option<Text> {
+    if token == "" or guild == "" or nom == "" or len(nom) > 100 { return none }
+    let rep = discord_rest("POST", "/api/v10/guilds/" + guild + "/roles", token, "{\"name\":" + json_texte(nom) + "}")
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 200 { return none }
+    let brut = unwrap_or(rep, "")
+    let separateur = find(brut, "\r\n\r\n")
+    if not has(separateur) { return none }
+    let body = sub(brut, unwrap_or(separateur, 0) + 4, len(brut) - unwrap_or(separateur, 0) - 4)
+    return json_chemin_texte(body, "id")
+}
+
+fn discord_deplacer_membre_vocal(token: Text, guild: Text, user: Text, channel: Text) -> Bool {
+    if token == "" or guild == "" or user == "" or channel == "" { return false }
+    let rep = discord_rest("PATCH", "/api/v10/guilds/" + guild + "/members/" + user, token, "{\"channel_id\":" + json_texte(channel) + "}")
+    if not has(rep) { return false }
+    return http_statut(unwrap_or(rep, "")) == 200
+}
+
+fn discord_supprimer_salon(token: Text, channel: Text) -> Bool {
+    if token == "" or channel == "" { return false }
+    let rep = discord_rest("DELETE", "/api/v10/channels/" + channel, token, "")
+    if not has(rep) { return false }
+    let code = http_statut(unwrap_or(rep, ""))
+    return code == 200 or code == 204
+}

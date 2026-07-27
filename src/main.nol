@@ -1,0 +1,824 @@
+import "nolc-discord::src/lib.nol"
+import "commands.nol"
+import "store.nol"
+import "automod.nol"
+
+fn endpoint(req: Requete) -> WebResultat {
+    let interaction = discord_interaction_type(req)
+    if has(interaction) and unwrap_or(interaction, 0) == 5 {
+        let custom_id = json_chemin_texte(req.corps, "data.custom_id")
+        if has(custom_id) { return WebResultat.WebOk(commande_discord(req, unwrap_or(custom_id, ""))) }
+    }
+    return discord_dispatch(req, commande_discord)
+}
+
+fn module_evenement_actif(guild: Text, module: Text) -> Bool {
+    let valeur = store_lire(guild, "module." + module + ".enabled")
+    if has(valeur) and (unwrap_or(valeur, "") == "false" or unwrap_or(valeur, "") == "0" or unwrap_or(valeur, "") == "off") { return false }
+    return true
+}
+
+fn remplace(texte: Text, motif: Text, valeur: Text) -> Text {
+    var resultat = texte
+    var position = find(resultat, motif)
+    while has(position) {
+        let i = unwrap_or(position, 0)
+        resultat = sub(resultat, 0, i) + valeur + sub(resultat, i + len(motif), len(resultat) - i - len(motif))
+        position = find(resultat, motif)
+    }
+    return resultat
+}
+
+fn rappel_partie(valeur: Text, index: Int) -> Text {
+    var reste = valeur
+    var i = 0
+    while i < index {
+        let separateur = find(reste, "|")
+        if not has(separateur) { return "" }
+        let debut = unwrap_or(separateur, 0) + 1
+        reste = sub(reste, debut, len(reste) - debut)
+        i = i + 1
+    }
+    if index < 2 {
+        let separateur = find(reste, "|")
+        if has(separateur) { return sub(reste, 0, unwrap_or(separateur, 0)) }
+    }
+    return reste
+}
+
+fn lire_buffer(fd: Int) -> Option<Text> {
+    var buf = ""
+    var etat = http_analyser(buf, 16384, 1048576)
+    var lectures = 0
+    while lectures < 256 {
+        match etat {
+            Complet(_r) => return some(buf)
+            Erreur(_e) => return none
+            Incomplet => {
+                let m = tcp_read(fd)
+                if not has(m) { return none }
+                let s = unwrap_or(m, "")
+                if s == "" { return none }
+                buf += s
+                etat = http_analyser(buf, 16384, 1048576)
+            }
+        }
+        lectures = lectures + 1
+    }
+    return none
+}
+
+fn http_entete(buf: Text, nom: Text) -> Text {
+    let marqueur = "\r\n" + nom + ": "
+    let debut = find(buf, marqueur)
+    if not has(debut) { return "" }
+    let d = unwrap_or(debut, 0) + len(marqueur)
+    let fin = find(sub(buf, d, len(buf) - d), "\r\n")
+    if has(fin) { return sub(buf, d, unwrap_or(fin, 0)) }
+    return sub(buf, d, len(buf) - d)
+}
+
+fn http_corps(buf: Text) -> Text {
+    let separateur = find(buf, "\r\n\r\n")
+    if not has(separateur) { return "" }
+    let d = unwrap_or(separateur, 0) + 4
+    return sub(buf, d, len(buf) - d)
+}
+
+fn http_query_param(buf: Text, nom: Text) -> Text {
+    let marqueur = nom + "="
+    let debut = find(buf, marqueur)
+    if not has(debut) { return "" }
+    let d = unwrap_or(debut, 0) + len(marqueur)
+    let reste = sub(buf, d, len(buf) - d)
+    let fin_espace = find(reste, " ")
+    let fin_amp = find(reste, "&")
+    var fin = len(reste)
+    if has(fin_espace) and unwrap_or(fin_espace, fin) < fin { fin = unwrap_or(fin_espace, fin) }
+    if has(fin_amp) and unwrap_or(fin_amp, fin) < fin { fin = unwrap_or(fin_amp, fin) }
+    return sub(reste, 0, fin)
+}
+
+fn dashboard_json_cles(cles: Text) -> Text {
+    var resultat = "["
+    var reste = cles
+    var premier = true
+    while reste != "" {
+        let separateur = find(reste, ", ")
+        var cle = reste
+        if has(separateur) { cle = sub(reste, 0, unwrap_or(separateur, 0)) }
+        if not premier { resultat += "," }
+        resultat += json_texte(cle)
+        premier = false
+        if not has(separateur) { break }
+        let suite = unwrap_or(separateur, 0) + 2
+        reste = sub(reste, suite, len(reste) - suite)
+    }
+    return resultat + "]"
+}
+
+fn dashboard_json_guildes(guildes: Text) -> Text {
+    var resultat = "["
+    var reste = guildes
+    var premier = true
+    while reste != "" {
+        let separateur = find(reste, ",")
+        var guild = reste
+        if has(separateur) { guild = sub(reste, 0, unwrap_or(separateur, 0)) }
+        if not premier { resultat += "," }
+        resultat += json_texte(guild)
+        premier = false
+        if not has(separateur) { break }
+        let suite = unwrap_or(separateur, 0) + 1
+        reste = sub(reste, suite, len(reste) - suite)
+    }
+    return resultat + "]"
+}
+
+fn dashboard_compter_liste_csv(valeur: Text) -> Int {
+    if valeur == "" { return 0 }
+    var total = 1
+    var reste = valeur
+    while contains(reste, ",") {
+        let separateur = find(reste, ",")
+        if not has(separateur) { break }
+        let suite = unwrap_or(separateur, 0) + 1
+        reste = sub(reste, suite, len(reste) - suite)
+        total = total + 1
+    }
+    return total
+}
+
+fn metrics_texte() -> Text {
+    let maintenant = epoch_maintenant()
+    let schema = unwrap_or(store_lire("_system", "schema_version"), "0")
+    let integrite = store_integrite_ok()
+    var sqlite_ok = 0
+    if integrite { sqlite_ok = 1 }
+    let dernier_tick = unwrap_or(parse_int(unwrap_or(store_lire("_system", "health.last_tick"), "0")), 0)
+    var age_tick = -1
+    if dernier_tick > 0 { age_tick = maintenant - dernier_tick }
+    let guildes = unwrap_or(store_lister_guildes(), "")
+    let total_guildes = dashboard_compter_liste_csv(guildes)
+    let commandes_heure = store_compter_recent_prefixe("_system", "command_global:", 3600)
+    return "# HELP noliae_up Processus Nolc disponible\n# TYPE noliae_up gauge\nnoliae_up 1\n# HELP noliae_sqlite_ok Integrite SQLite\n# TYPE noliae_sqlite_ok gauge\nnoliae_sqlite_ok " + text(sqlite_ok) + "\n# HELP noliae_schema_version Schema SQLite\n# TYPE noliae_schema_version gauge\nnoliae_schema_version " + schema + "\n# HELP noliae_gateway_last_tick_age_seconds Age du dernier tick Gateway\n# TYPE noliae_gateway_last_tick_age_seconds gauge\nnoliae_gateway_last_tick_age_seconds " + text(age_tick) + "\n# HELP noliae_configured_guilds Serveurs connus en SQLite\n# TYPE noliae_configured_guilds gauge\nnoliae_configured_guilds " + text(total_guildes) + "\n# HELP noliae_commands_last_hour Commandes traitees sur une heure\n# TYPE noliae_commands_last_hour gauge\nnoliae_commands_last_hour " + text(commandes_heure) + "\n# HELP noliae_build_info Version du runtime\n# TYPE noliae_build_info gauge\nnoliae_build_info{runtime=\"nolc\"} 1\n"
+}
+
+fn dashboard_html() -> Text {
+    return "<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Noliae — Dashboard</title>"
+        + "<style>:root{color-scheme:dark;--bg:#0b1020;--side:#11182c;--card:#171f36;--line:#293451;--text:#edf1ff;--muted:#97a4c3;--accent:#6674ff;--green:#35d18b;--danger:#ee6575}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 65% 0,#1d2850 0,var(--bg) 43%);font:14px Inter,ui-sans-serif,system-ui;color:var(--text);display:grid;grid-template-columns:242px 1fr;min-height:100vh}aside{padding:24px 16px;background:#0e1426;border-right:1px solid var(--line)}.brand{font-size:20px;font-weight:800;margin:2px 10px 34px}.brand b{color:#91a0ff}nav a{display:block;padding:11px 12px;margin:4px 0;border-radius:9px;color:var(--muted);text-decoration:none}nav a.active,nav a:hover{background:#242f54;color:white}main{padding:30px;max-width:1500px;width:100%;margin:auto}.top{display:flex;justify-content:space-between;gap:18px;align-items:center}.top h1{font-size:28px;margin:0 0 6px}.muted{color:var(--muted)}.online{background:#153c33;color:#77edb5;padding:8px 11px;border-radius:999px}.card{background:linear-gradient(145deg,#1a2440,#151d34);border:1px solid var(--line);border-radius:15px;padding:18px;box-shadow:0 14px 40px #0002}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:24px 0}.metric small{color:var(--muted)}.metric strong{display:block;font-size:25px;margin-top:9px}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.modules{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.module{padding:13px;border:1px solid var(--line);border-radius:11px;display:flex;justify-content:space-between;align-items:center}.switch{width:37px;height:21px;border-radius:20px;background:var(--accent);position:relative}.switch:after{content:'';position:absolute;background:white;width:15px;height:15px;border-radius:50%;right:3px;top:3px}input,select,button{font:inherit;border-radius:9px;padding:10px;border:1px solid var(--line);background:#0e152a;color:var(--text)}button{background:var(--accent);border:0;font-weight:700;cursor:pointer}button.danger{background:var(--danger)}.tools{display:flex;gap:8px;flex-wrap:wrap;margin:13px 0}pre{white-space:pre-wrap;background:#0c1327;border-radius:10px;padding:13px;min-height:120px;color:#b6c3e4}@media(max-width:900px){body{display:block}aside{display:none}main{padding:18px}.metrics,.grid{grid-template-columns:1fr 1fr}.grid{display:grid}}@media(max-width:560px){.metrics,.grid,.modules{grid-template-columns:1fr}}</style>"
+        + "<aside><div class=\"brand\">Noliae <b>Control</b></div><nav><a class=\"active\">◈ Accueil</a><a>▣ Serveurs</a><a>◉ Modules</a><a>⌁ Modération</a><a>▤ Tickets</a><a>↗ Intégrations</a><a>▥ Statistiques</a><a>⚙ Paramètres</a></nav></aside>"
+        + "<main><div class=\"top\"><div><h1>Bonjour 👋</h1><span class=\"muted\">Pilote ton serveur Discord depuis Noliae.</span></div><span class=\"online\">● Bot opérationnel</span></div>"
+        + "<section class=\"metrics\"><div class=\"card metric\"><small>Serveurs configurés</small><strong id=\"guildCount\">—</strong></div><div class=\"card metric\"><small>Modules disponibles</small><strong>9</strong></div><div class=\"card metric\"><small>API dashboard</small><strong>Active</strong></div><div class=\"card metric\"><small>Configuration</small><strong>SQLite</strong></div></section>"
+        + "<section class=\"grid\"><div class=\"card\"><h2>Modules</h2><p class=\"muted\">Active ou coupe les fonctions par serveur.</p><div class=\"modules\"><div class=\"module\">Modération <i class=\"switch\"></i></div><div class=\"module\">Tickets <i class=\"switch\"></i></div><div class=\"module\">Communauté <i class=\"switch\"></i></div><div class=\"module\">Automod <i class=\"switch\"></i></div><div class=\"module\">Intégrations <i class=\"switch\"></i></div><div class=\"module\">Statistiques <i class=\"switch\"></i></div></div></div>"
+        + "<div class=\"card\"><h2>Connexion</h2><p class=\"muted\">Saisis le secret administrateur actuel pour charger les serveurs.</p><input id=\"secret\" type=\"password\" placeholder=\"Secret dashboard\" autocomplete=\"off\"><div class=\"tools\"><button onclick=\"loadGuilds()\">Charger</button></div><select id=\"guild\" onchange=\"loadKeys()\"><option value=\"\">Choisir un serveur</option></select><p id=\"status\" class=\"muted\"></p></div></section>"
+        + "<section class=\"card\" style=\"margin-top:16px\"><h2>Overlays stream</h2><p class=\"muted\">Crée un overlay OBS/streamlabs custom par serveur. URL publique : <code id=\"overlayUrl\">/overlay?guild=ID</code></p><div class=\"tools\"><input id=\"ovTitle\" placeholder=\"Titre overlay\"><input id=\"ovSubtitle\" placeholder=\"Sous-titre\"><input id=\"ovAccent\" placeholder=\"#6674ff\"><select id=\"ovPosition\"><option>bottom-left</option><option>bottom-right</option><option>top-left</option><option>top-right</option><option>center</option></select><input id=\"ovWidth\" placeholder=\"largeur px\"><input id=\"ovOpacity\" placeholder=\"opacité 0.1-1\"><button onclick=\"saveOverlay()\">Sauver overlay</button><button onclick=\"openOverlay()\">Prévisualiser</button></div></section>"
+        + "<section class=\"card\" style=\"margin-top:16px\"><h2>Configuration du serveur</h2><div class=\"tools\"><input id=\"key\" placeholder=\"Clé, ex. welcome_channel\"><input id=\"value\" placeholder=\"Valeur\"><button onclick=\"saveKey()\">Enregistrer</button><button class=\"danger\" onclick=\"deleteKey()\">Supprimer</button></div><pre id=\"keys\">Charge un serveur pour afficher sa configuration.</pre></section></main>"
+        + "<script>const q=id=>document.getElementById(id),headers=()=>({'X-Noliae-Admin':q('secret').value});async function loadGuilds(){let r=await fetch('/admin/guilds',{headers:headers()});if(!r.ok){q('status').textContent='Accès refusé';return}let j=await r.json();let a=j.guilds||[];q('guildCount').textContent=a.length;q('guild').innerHTML='<option value=\"\">Choisir un serveur</option>'+a.map(x=>'<option>'+x+'</option>').join('');q('status').textContent='Connecté';}async function loadKeys(){let g=q('guild').value;if(!g)return;let r=await fetch('/admin/config?guild='+encodeURIComponent(g),{headers:headers()});if(!r.ok)return;q('keys').textContent=((await r.json()).keys||[]).join('\\n')||'Aucune clé.';q('overlayUrl').textContent='/overlay?guild='+g;}async function saveKey(){let g=q('guild').value,k=q('key').value,v=q('value').value;if(!g||!k||!v)return;q('status').textContent=(await fetch('/admin/config',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k,value:v})})).status===204?'Configuration enregistrée':'Erreur';loadKeys()}async function deleteKey(){let g=q('guild').value,k=q('key').value;if(!g||!k||!confirm('Supprimer cette clé ?'))return;q('status').textContent=(await fetch('/admin/config/delete',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k})})).status===204?'Configuration supprimée':'Erreur';loadKeys()}async function saveOne(k,v){let g=q('guild').value;if(!g||!v)return false;let r=await fetch('/admin/config',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k,value:v})});return r.status===204}async function saveOverlay(){let ok=true;ok=await saveOne('overlay.title',q('ovTitle').value||'Noliae Live')&&ok;ok=await saveOne('overlay.subtitle',q('ovSubtitle').value||'Communauté Discord')&&ok;ok=await saveOne('overlay.accent',q('ovAccent').value||'#6674ff')&&ok;ok=await saveOne('overlay.position',q('ovPosition').value)&&ok;ok=await saveOne('overlay.width',q('ovWidth').value||'420')&&ok;ok=await saveOne('overlay.opacity',q('ovOpacity').value||'0.92')&&ok;q('status').textContent=ok?'Overlay enregistré':'Erreur overlay';loadKeys()}function openOverlay(){let g=q('guild').value;if(g)window.open('/overlay?guild='+encodeURIComponent(g),'_blank')}</script></html>"
+}
+
+fn overlay_html(guild: Text) -> Text {
+    let titre = html_escape(unwrap_or(store_lire(guild, "overlay.title"), "Noliae Live"))
+    let sous_titre = html_escape(unwrap_or(store_lire(guild, "overlay.subtitle"), "Communauté Discord"))
+    var accent = unwrap_or(store_lire(guild, "overlay.accent"), "#6674ff")
+    if len(accent) > 32 or contains(accent, ";") or contains(accent, "<") { accent = "#6674ff" }
+    var largeur = unwrap_or(parse_int(unwrap_or(store_lire(guild, "overlay.width"), "420")), 420)
+    if largeur < 260 { largeur = 260 }
+    if largeur > 900 { largeur = 900 }
+    var opacite = unwrap_or(store_lire(guild, "overlay.opacity"), "0.92")
+    if opacite == "" or len(opacite) > 4 or contains(opacite, ";") { opacite = "0.92" }
+    let position = unwrap_or(store_lire(guild, "overlay.position"), "bottom-left")
+    var css_pos = "left:32px;bottom:32px;"
+    if position == "bottom-right" { css_pos = "right:32px;bottom:32px;" }
+    if position == "top-left" { css_pos = "left:32px;top:32px;" }
+    if position == "top-right" { css_pos = "right:32px;top:32px;" }
+    if position == "center" { css_pos = "left:50%;top:50%;transform:translate(-50%,-50%);" }
+    return "<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Noliae Overlay</title><style>html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui;color:white}.overlay{position:fixed;" + css_pos + "width:" + text(largeur) + "px;background:rgba(12,18,34," + opacite + ");border:1px solid color-mix(in srgb," + accent + " 55%,white 10%);border-radius:18px;padding:20px 22px;box-shadow:0 22px 80px #0008,0 0 42px color-mix(in srgb," + accent + " 45%,transparent)}.bar{height:4px;width:72px;background:" + accent + ";border-radius:99px;margin-bottom:14px}.title{font-size:32px;font-weight:900;line-height:1.05;text-shadow:0 2px 18px #000}.subtitle{margin-top:9px;color:#d9e1ff;font-size:16px}.pill{display:inline-block;margin-top:16px;padding:7px 10px;background:" + accent + ";border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.02em}</style><body><section class=\"overlay\"><div class=\"bar\"></div><div class=\"title\">" + titre + "</div><div class=\"subtitle\">" + sous_titre + "</div><div class=\"pill\">NOLIAE DISCORD</div></section></body></html>"
+}
+
+fn servir(fd: Int, pre: List<Fn(Requete) -> Option<Reponse>>) {
+    let bo = lire_buffer(fd)
+    if not has(bo) {
+        let _e = tcp_write(fd, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        return
+    }
+    let buf = unwrap_or(bo, "")
+    if starts_with(buf, "GET /admin/schema ") {
+        let secret_schema = store_lire("_system", "dashboard.secret")
+        let fourni_schema = http_entete(buf, "X-Noliae-Admin")
+        if not has(secret_schema) or len(unwrap_or(secret_schema, "")) < 32 or fourni_schema == "" or fourni_schema != unwrap_or(secret_schema, "") { let _forbidden_schema = tcp_write(fd, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let schema = "{\"modules\":[\"security\",\"moderation\",\"community\",\"fun\",\"voice\",\"stats\",\"economy\",\"ai\",\"integrations\"],\"keys\":[\"module.<module>.enabled\",\"welcome_channel\",\"goodbye_channel\",\"auto_role\",\"log.channel\",\"log.moderation_channel\",\"log.security_channel\",\"log.community_channel\",\"prefix\",\"maintenance\",\"ai.enabled\",\"xp.enabled\",\"xp.multiplier\",\"xp.cooldown_seconds\",\"xp.exclude.channel.<channel_id>\",\"xp.exclude.role.<role_id>\",\"community.suggestions_anonymous\",\"ticket.priority.<channel_id>\",\"automod.invites\",\"automod.links\",\"automod.caps\",\"automod.mentions\",\"automod.banned_words\",\"automod.duplicates\",\"antispam.max_messages\",\"raid.join_limit\",\"security.recent_account_seconds\",\"security.recent_account_action\",\"security.nuke_threshold\",\"moderation.warn_threshold\",\"moderation.warn_timeout_seconds\",\"reports.channel\",\"voice.role_seconds\",\"voice.role_id\",\"overlay.title\",\"overlay.subtitle\",\"overlay.accent\",\"overlay.position\",\"overlay.width\",\"overlay.opacity\",\"verification.code\",\"verification.role_id\",\"verification.unverified_role_id\",\"verification.timeout_seconds\",\"verification.timeout_action\",\"music.vote_threshold\"]}"
+        let reponse_schema = "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + text(len(schema)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + schema
+        let _schema = tcp_write(fd, reponse_schema)
+        return
+    }
+    if starts_with(buf, "POST /admin/config/delete ") {
+        let secret_delete = store_lire("_system", "dashboard.secret")
+        let fourni_delete = http_entete(buf, "X-Noliae-Admin")
+        if not has(secret_delete) or len(unwrap_or(secret_delete, "")) < 32 or fourni_delete == "" or fourni_delete != unwrap_or(secret_delete, "") { let _forbidden_delete = tcp_write(fd, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let corps_delete = http_corps(buf)
+        let guild_delete = unwrap_or(json_chemin_texte(corps_delete, "guild"), "")
+        let cle_delete = unwrap_or(json_chemin_texte(corps_delete, "key"), "")
+        let cle_delete_normale = lower(cle_delete)
+        if guild_delete == "" or cle_delete == "" or cle_delete_normale == "verification.code" or starts_with(cle_delete, "_system.") or cle_delete == "schema_version" or contains(cle_delete_normale, "token") or contains(cle_delete_normale, "secret") or contains(cle_delete_normale, "password") or contains(cle_delete_normale, "private") or contains(cle_delete_normale, "credential") or contains(cle_delete_normale, "api_key") or contains(cle_delete_normale, "webhook") { let _bad_delete = tcp_write(fd, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        if store_supprimer(guild_delete, cle_delete) and store_log_action(guild_delete, "dashboard", "dashboard_config_delete", cle_delete, "Configuration supprimée") { let _ok_delete = tcp_write(fd, "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let _error_delete = tcp_write(fd, "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        return
+    }
+    if starts_with(buf, "POST /admin/config ") {
+        let secret = store_lire("_system", "dashboard.secret")
+        let fourni = http_entete(buf, "X-Noliae-Admin")
+        if not has(secret) or len(unwrap_or(secret, "")) < 32 or fourni == "" or fourni != unwrap_or(secret, "") { let _forbidden = tcp_write(fd, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let corps = http_corps(buf)
+        let guild = unwrap_or(json_chemin_texte(corps, "guild"), "")
+        let cle = unwrap_or(json_chemin_texte(corps, "key"), "")
+        let valeur = unwrap_or(json_chemin_texte(corps, "value"), "")
+        let cle_normale = lower(cle)
+        if guild == "" or cle == "" or valeur == "" or starts_with(cle, "_system.") or cle == "schema_version" or contains(cle_normale, "token") or contains(cle_normale, "secret") or contains(cle_normale, "password") or contains(cle_normale, "private") or contains(cle_normale, "credential") or contains(cle_normale, "api_key") or contains(cle_normale, "webhook") { let _bad = tcp_write(fd, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        if store_configurer(guild, cle, valeur) and store_log_action(guild, "dashboard", "dashboard_config", cle, "Configuration modifiée") { let _ok = tcp_write(fd, "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let _error = tcp_write(fd, "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        return
+    }
+    if starts_with(buf, "GET /admin/config ") {
+        let secret = store_lire("_system", "dashboard.secret")
+        let fourni = http_entete(buf, "X-Noliae-Admin")
+        if not has(secret) or len(unwrap_or(secret, "")) < 32 or fourni == "" or fourni != unwrap_or(secret, "") { let _forbidden = tcp_write(fd, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let guild = http_query_param(buf, "guild")
+        if guild == "" { let _bad = tcp_write(fd, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let cles = store_lister_cles(guild)
+        var corps_admin = "{\"guild\":" + json_texte(guild) + ",\"keys\":" + dashboard_json_cles(unwrap_or(cles, "")) + "}"
+        let reponse_admin = "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + text(len(corps_admin)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + corps_admin
+        let _admin = tcp_write(fd, reponse_admin)
+        return
+    }
+    if starts_with(buf, "GET /admin/guilds ") {
+        let secret = store_lire("_system", "dashboard.secret")
+        let fourni = http_entete(buf, "X-Noliae-Admin")
+        if not has(secret) or len(unwrap_or(secret, "")) < 32 or fourni == "" or fourni != unwrap_or(secret, "") { let _forbidden = tcp_write(fd, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let guildes = store_lister_guildes()
+        let corps_guildes = "{\"guilds\":" + dashboard_json_guildes(unwrap_or(guildes, "")) + "}"
+        let reponse_guildes = "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + text(len(corps_guildes)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + corps_guildes
+        let _guildes = tcp_write(fd, reponse_guildes)
+        return
+    }
+    if starts_with(buf, "GET /dashboard ") or starts_with(buf, "GET /dashboard?") {
+        let html = dashboard_html()
+        let reponse = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: " + text(len(html)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + html
+        let _dashboard = tcp_write(fd, reponse)
+        return
+    }
+    if starts_with(buf, "GET /overlay ") or starts_with(buf, "GET /overlay?") {
+        let guild_overlay = http_query_param(buf, "guild")
+        if guild_overlay == "" { let _bad_overlay = tcp_write(fd, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
+        let html_overlay = overlay_html(guild_overlay)
+        let reponse_overlay = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: " + text(len(html_overlay)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + html_overlay
+        let _overlay = tcp_write(fd, reponse_overlay)
+        return
+    }
+    if starts_with(buf, "GET /dashboard-legacy ") or starts_with(buf, "GET /dashboard-legacy?") {
+        let html = "<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Noliae Dashboard</title><style>body{font-family:system-ui;background:#10131a;color:#f3f4f6;max-width:900px;margin:30px auto;padding:0 20px}article{background:#1b2230;border-radius:12px;padding:24px;margin:14px 0}input,button,select{font:inherit;padding:9px;border-radius:7px;border:1px solid #46536b;background:#10131a;color:#f3f4f6;margin:4px}button{background:#5865f2;border:0;cursor:pointer}button.danger{background:#b42318}code{color:#8be9fd}.muted{color:#aab3c5}</style><article><h1>Noliae Discord Bot</h1><p class=\"muted\">Administration multi-serveurs — les secrets restent dans l’environnement du bot.</p><label>Secret dashboard <input id=\"secret\" type=\"password\" autocomplete=\"off\"></label><button onclick=\"loadGuilds()\">Charger les serveurs</button><select id=\"guild\" onchange=\"loadKeys()\"><option value=\"\">Choisir un serveur</option></select></article><article><h2>Modules</h2><select id=\"module\"><option>security</option><option>moderation</option><option>community</option><option>fun</option><option>voice</option><option>stats</option><option>economy</option><option>ai</option><option>integrations</option></select><button onclick=\"setModule(true)\">Activer</button><button class=\"danger\" onclick=\"setModule(false)\">Désactiver</button></article><article><h2>Configuration</h2><p><input id=\"key\" list=\"schema\" placeholder=\"clé, ex. welcome_channel\"><datalist id=\"schema\"></datalist><input id=\"value\" placeholder=\"valeur\"><button onclick=\"saveKey()\">Enregistrer</button><button class=\"danger\" onclick=\"deleteKey()\">Supprimer la clé</button></p><pre id=\"keys\" class=\"muted\">Aucune configuration chargée.</pre><p id=\"status\"></p></article><script>const q=id=>document.getElementById(id),headers=()=>({'X-Noliae-Admin':q('secret').value});async function loadSchema(){let r=await fetch('/admin/schema',{headers:headers()});if(r.ok){let j=await r.json();q('schema').innerHTML=(j.keys||[]).map(x=>'<option value=\"'+x+'\">').join('');}}async function loadGuilds(){let r=await fetch('/admin/guilds',{headers:headers()});if(!r.ok){q('status').textContent='Accès refusé ou dashboard indisponible';return}let j=await r.json();q('guild').innerHTML='<option value=\"\">Choisir un serveur</option>'+(j.guilds||[]).map(x=>'<option>'+x+'</option>').join('');await loadSchema();q('status').textContent='Serveurs et schéma chargés';}async function loadKeys(){let g=q('guild').value;if(!g)return;let r=await fetch('/admin/config?guild='+encodeURIComponent(g),{headers:headers()});let j=await r.json();q('keys').textContent=(j.keys||[]).join('\\n')||'Aucune clé';}async function saveKey(){let g=q('guild').value,k=q('key').value,v=q('value').value;if(!g||!k||!v){q('status').textContent='Serveur, clé et valeur requis';return}let r=await fetch('/admin/config',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k,value:v})});q('status').textContent=r.status===204?'Configuration enregistrée':'Erreur '+r.status;if(r.status===204)loadKeys();}async function setModule(active){let g=q('guild').value;if(!g){q('status').textContent='Choisis un serveur';return}let r=await fetch('/admin/config',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:'module.'+q('module').value+'.enabled',value:active?'true':'false'})});q('status').textContent=r.status===204?'Module mis à jour':'Erreur '+r.status;if(r.status===204)loadKeys();}async function deleteKey(){let g=q('guild').value,k=q('key').value;if(!g||!k){q('status').textContent='Serveur et clé requis';return}if(!confirm('Supprimer cette configuration ?'))return;let r=await fetch('/admin/config/delete',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k})});q('status').textContent=r.status===204?'Configuration supprimée':'Erreur '+r.status;if(r.status===204){q('value').value='';loadKeys();}}</script></html>"
+        let reponse = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: " + text(len(html)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + html
+        let _dashboard = tcp_write(fd, reponse)
+        return
+    }
+    if starts_with(buf, "GET /metrics") {
+        let metrics = metrics_texte()
+        let reponse = "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4; charset=utf-8\r\nContent-Length: " + text(len(metrics)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + metrics
+        let _metrics = tcp_write(fd, reponse)
+        return
+    }
+    if starts_with(buf, "GET ") {
+        let _h = tcp_write(fd, reponse_rendu(reponse_json("{\"status\":\"ok\",\"bot\":\"noliae-nolc\"}")))
+        return
+    }
+    var post: List<Fn(Requete, Reponse) -> Reponse> = []
+    let _w = tcp_write(fd, web_repondre_resultat_pre(buf, web_limites_defaut(), endpoint, pre, post))
+}
+
+fn traiter_rappels_echeance(token: Text, guild: Text) {
+    if guild == "" { return }
+    var livres = 0
+    var continuer = true
+    while continuer and livres < 10 {
+        let rappel = store_rappel_du(guild)
+        if not has(rappel) { continuer = false } else {
+            let brut = unwrap_or(rappel, "")
+            let id = unwrap_or(parse_int(rappel_partie(brut, 0)), 0)
+            let proprietaire = rappel_partie(brut, 1)
+            let destination = rappel_partie(brut, 2)
+            let texte = rappel_partie(brut, 3)
+            var livre = false
+            if starts_with(texte, "__noliae_unban|") {
+                let cible = sub(texte, len("__noliae_unban|"), len(texte) - len("__noliae_unban|"))
+                livre = discord_debannir_identifiant(token, guild, cible)
+                if livre { let _audit = store_log_action(guild, proprietaire, "unban_expire", cible, "Bannissement temporaire arrivé à échéance") }
+            } else if starts_with(texte, "__noliae_announce|") {
+                let annonce = sub(texte, len("__noliae_announce|"), len(texte) - len("__noliae_announce|"))
+                if module_evenement_actif(guild, "community") { livre = discord_envoie_message(token, destination, annonce); if livre { let _audit_announce = store_log_action(guild, proprietaire, "announcement_publish", destination, annonce) } } else { livre = true; let _audit_skip = store_log_action(guild, proprietaire, "announcement_skipped", destination, "Module community désactivé") }
+            } else if starts_with(texte, "__noliae_unrole|") {
+                let reste_role = sub(texte, len("__noliae_unrole|"), len(texte) - len("__noliae_unrole|"))
+                let separateur_role = find(reste_role, "|")
+                if has(separateur_role) {
+                    let membre_role = sub(reste_role, 0, unwrap_or(separateur_role, 0))
+                    let role_role = sub(reste_role, unwrap_or(separateur_role, 0) + 1, len(reste_role) - unwrap_or(separateur_role, 0) - 1)
+                    livre = discord_retirer_role(token, guild, membre_role, role_role)
+                    if livre { let _audit_role = store_log_action(guild, proprietaire, "temporary_role_expire", membre_role, role_role) }
+                }
+            } else if starts_with(texte, "__noliae_repeat|") {
+                let reste_repeat = sub(texte, len("__noliae_repeat|"), len(texte) - len("__noliae_repeat|"))
+                let separateur_repeat = find(reste_repeat, "|")
+                if has(separateur_repeat) {
+                    let delai_repeat = unwrap_or(parse_int(sub(reste_repeat, 0, unwrap_or(separateur_repeat, 0))), 0)
+                    let texte_repeat = sub(reste_repeat, unwrap_or(separateur_repeat, 0) + 1, len(reste_repeat) - unwrap_or(separateur_repeat, 0) - 1)
+                    let envoye_repeat = discord_envoie_message(token, destination, "⏰ Rappel récurrent pour <@" + proprietaire + "> : " + texte_repeat)
+                    if envoye_repeat and delai_repeat > 0 { livre = store_creer_rappel(guild, proprietaire, destination, texte, epoch_maintenant() + delai_repeat) }
+                }
+            } else {
+                livre = discord_envoie_message(token, destination, "⏰ Rappel pour <@" + proprietaire + "> : " + texte)
+            }
+            if id > 0 and livre { let _supprime = store_supprimer_rappel(id); livres = livres + 1 } else { continuer = false }
+        }
+    }
+}
+
+fn traiter_flux_rss_echeance(token: Text, guild: Text) {
+    if guild == "" or not module_evenement_actif(guild, "integrations") { return }
+    let dernier = unwrap_or(parse_int(unwrap_or(store_lire(guild, "rss.last_check"), "0")), 0)
+    let maintenant = epoch_maintenant()
+    if maintenant - dernier < 300 { return }
+    if not store_configurer(guild, "rss.last_check", text(maintenant)) { return }
+    let abonnement = store_rss_du(guild)
+    if not has(abonnement) { return }
+    var reste_abonnements = unwrap_or(abonnement, "")
+    while reste_abonnements != "" {
+        let ligne = find(reste_abonnements, "\n")
+        var brut_rss = reste_abonnements
+        if has(ligne) { brut_rss = sub(reste_abonnements, 0, unwrap_or(ligne, 0)) }
+        let destination_rss = rappel_partie(brut_rss, 0)
+        let url_rss = rappel_partie(brut_rss, 1)
+        let ancien_titre = rappel_partie(brut_rss, 2)
+        let titre_rss = integration_rss_premier(url_rss)
+        if has(titre_rss) and unwrap_or(titre_rss, "") != ancien_titre {
+            let titre_propre = integration_texte_sans_mentions(unwrap_or(titre_rss, ""))
+            var message_rss = "📰 Nouveau contenu RSS : **" + titre_propre + "**\n" + url_rss
+            if integration_est_flux_youtube(url_rss) {
+                let chaine_youtube = integration_youtube_channel_depuis_flux(url_rss)
+                message_rss = "▶️ **Nouvelle vidéo YouTube !**\n**" + titre_propre + "**\n" + integration_youtube_lien_channel(chaine_youtube)
+            }
+            if discord_envoie_message(token, destination_rss, message_rss) { let _save_rss = store_rss_titre(guild, url_rss, unwrap_or(titre_rss, "")) }
+        }
+        if not has(ligne) { break }
+        let suite = unwrap_or(ligne, 0) + 1
+        reste_abonnements = sub(reste_abonnements, suite, len(reste_abonnements) - suite)
+    }
+}
+
+fn traiter_calendriers_echeance(token: Text, guild: Text) {
+    if guild == "" or not module_evenement_actif(guild, "integrations") { return }
+    let dernier = unwrap_or(parse_int(unwrap_or(store_lire(guild, "calendar.last_check"), "0")), 0)
+    let maintenant = epoch_maintenant()
+    if maintenant - dernier < 900 { return }
+    if not store_configurer(guild, "calendar.last_check", text(maintenant)) { return }
+    var index = 1
+    while index <= 5 {
+        let url = unwrap_or(store_lire(guild, "calendar." + text(index) + ".url"), "")
+        let destination = unwrap_or(store_lire(guild, "calendar." + text(index) + ".channel"), "")
+        let ancien = unwrap_or(store_lire(guild, "calendar." + text(index) + ".title"), "")
+        if url != "" and destination != "" {
+            let evenement = integration_calendrier(url)
+            if has(evenement) and unwrap_or(evenement, "") != ancien and discord_envoie_message(token, destination, unwrap_or(evenement, "") + "\n" + url) {
+                let _save_calendar = store_configurer(guild, "calendar." + text(index) + ".title", unwrap_or(evenement, ""))
+            }
+        }
+        index = index + 1
+    }
+}
+
+fn traiter_twitch_echeance(token: Text, guild: Text) {
+    if guild == "" or not module_evenement_actif(guild, "integrations") { return }
+    let dernier = unwrap_or(parse_int(unwrap_or(store_lire(guild, "twitch.last_check"), "0")), 0)
+    let maintenant = epoch_maintenant()
+    if maintenant - dernier < 300 { return }
+    if not store_configurer(guild, "twitch.last_check", text(maintenant)) { return }
+    let abonnement = store_twitch_du(guild)
+    if not has(abonnement) { return }
+    var reste = unwrap_or(abonnement, "")
+    while reste != "" {
+        let ligne = find(reste, "\n")
+        var brut = reste
+        if has(ligne) { brut = sub(reste, 0, unwrap_or(ligne, 0)) }
+        let destination = rappel_partie(brut, 0)
+        let chaine = rappel_partie(brut, 1)
+        let ancien = unwrap_or(parse_int(rappel_partie(brut, 2)), -1)
+        let statut = integration_twitch_statut(chaine)
+        if has(statut) {
+            var nouveau = 0
+            if starts_with(unwrap_or(statut, ""), "🟣") { nouveau = 1 }
+            if ancien < 0 { let _initial = store_twitch_etat(guild, chaine, nouveau) }
+            else if nouveau != ancien {
+                if nouveau == 1 and discord_envoie_message(token, destination, "🔴 **" + chaine + " est en direct sur Twitch !**\nhttps://www.twitch.tv/" + chaine) { let _live = store_twitch_etat(guild, chaine, nouveau) }
+                else { let _offline = store_twitch_etat(guild, chaine, nouveau) }
+            }
+        }
+        if not has(ligne) { break }
+        let suite = unwrap_or(ligne, 0) + 1
+        reste = sub(reste, suite, len(reste) - suite)
+    }
+}
+
+fn rapport_stats_texte(guild: Text, periode: Text, secondes: Int) -> Text {
+    let messages = store_compter_recent(guild, "message", secondes)
+    let commandes = store_compter_recent_prefixe(guild, "command_user:", secondes)
+    let arrivees = store_compter_recent(guild, "member_join", secondes)
+    let departs = store_compter_recent(guild, "member_leave", secondes)
+    let moderation = store_compter_recent(guild, "ban", secondes) + store_compter_recent(guild, "kick", secondes) + store_compter_recent(guild, "warn", secondes) + store_compter_recent(guild, "mute", secondes)
+    return "📈 Rapport " + periode + "\nMessages : " + text(messages) + "\nCommandes : " + text(commandes) + "\nArrivées : " + text(arrivees) + "\nDéparts : " + text(departs) + "\nModération : " + text(moderation)
+}
+
+fn traiter_rapports_echeance(token: Text, guild: Text) {
+    let destination = store_lire(guild, "reports.channel")
+    if not has(destination) or unwrap_or(destination, "") == "" { return }
+    let maintenant = epoch_maintenant()
+    let dernier_jour = unwrap_or(parse_int(unwrap_or(store_lire(guild, "reports.last.daily"), "0")), 0)
+    if maintenant - dernier_jour >= 86400 and discord_envoie_message(token, unwrap_or(destination, ""), rapport_stats_texte(guild, "quotidien", 86400)) { let _save_day = store_configurer(guild, "reports.last.daily", text(maintenant)) }
+    let dernier_semaine = unwrap_or(parse_int(unwrap_or(store_lire(guild, "reports.last.weekly"), "0")), 0)
+    if maintenant - dernier_semaine >= 604800 and discord_envoie_message(token, unwrap_or(destination, ""), rapport_stats_texte(guild, "hebdomadaire", 604800)) { let _save_week = store_configurer(guild, "reports.last.weekly", text(maintenant)) }
+    let dernier_mois = unwrap_or(parse_int(unwrap_or(store_lire(guild, "reports.last.monthly"), "0")), 0)
+    if maintenant - dernier_mois >= 2592000 and discord_envoie_message(token, unwrap_or(destination, ""), rapport_stats_texte(guild, "mensuel", 2592000)) { let _save_month = store_configurer(guild, "reports.last.monthly", text(maintenant)) }
+}
+
+fn traiter_invitations_echeance(token: Text, guild: Text) {
+    if guild == "" { return }
+    let actif = store_lire(guild, "invites.tracking")
+    if not has(actif) or (unwrap_or(actif, "") != "true" and unwrap_or(actif, "") != "1") { return }
+    let dernier = unwrap_or(parse_int(unwrap_or(store_lire(guild, "invites.last_check"), "0")), 0)
+    let maintenant = epoch_maintenant()
+    if maintenant - dernier < 300 { return }
+    if store_configurer(guild, "invites.last_check", text(maintenant)) {
+        let _invites = discord_lister_invitations(token, guild)
+    }
+}
+
+fn traiter_verifications_echeance(token: Text, guild: Text) {
+    if guild == "" or not module_evenement_actif(guild, "security") { return }
+    let delai = unwrap_or(parse_int(unwrap_or(store_lire(guild, "verification.timeout_seconds"), "0")), 0)
+    if delai <= 0 { return }
+    let pendants = store_lister_prefixe(guild, "verification.pending.", 200)
+    if not has(pendants) { return }
+    var reste = unwrap_or(pendants, "")
+    let maintenant = epoch_maintenant()
+    while reste != "" {
+        let fin_ligne = find(reste, "\n")
+        var ligne = reste
+        if has(fin_ligne) { ligne = sub(reste, 0, unwrap_or(fin_ligne, 0)) }
+        let separateur = find(ligne, "|")
+        if has(separateur) {
+            let user = sub(ligne, 0, unwrap_or(separateur, 0))
+            let debut = unwrap_or(separateur, 0) + 1
+            let arrivee = unwrap_or(parse_int(sub(ligne, debut, len(ligne) - debut)), 0)
+            if user != "" and arrivee > 0 and maintenant - arrivee >= delai {
+                let action = unwrap_or(store_lire(guild, "verification.timeout_action"), "kick")
+                if action == "kick" {
+                    let expulse = discord_expulser_identifiant(token, guild, user)
+                    let _audit_timeout = store_log_action(guild, user, "verification_timeout", user, "Expulsion membre non vérifié : " + text(expulse))
+                }
+                let _forget_pending = store_supprimer(guild, "verification.pending." + user)
+            }
+        }
+        if not has(fin_ligne) { break }
+        let suite = unwrap_or(fin_ligne, 0) + 1
+        reste = sub(reste, suite, len(reste) - suite)
+    }
+}
+
+fn mode_gateway() {
+    let tok = env("DISCORD_BOT_TOKEN")
+    if not has(tok) { print("DISCORD_BOT_TOKEN requis pour le mode gateway."); return }
+    if not sodium_prete() { print("libsodium indisponible pour le Gateway."); return }
+    let token = unwrap_or(tok, "")
+    // Guild messages, messages privés et contenu des messages.
+    // GUILD_MEMBERS (2) + GUILD_VOICE_STATES (128) + GUILD_MESSAGES (512) + DIRECT_MESSAGES (4096)
+    // + MESSAGE_CONTENT (32768).
+    let intents = 37506
+    gateway_run(token, intents, fn (js: Text) -> Bool {
+            let evenement = unwrap_or(json_texte_champ(js, "t"), "")
+            if evenement != "MESSAGE_CREATE" and evenement != "MESSAGE_UPDATE" and evenement != "MESSAGE_DELETE" and evenement != "GUILD_MEMBER_ADD" and evenement != "GUILD_MEMBER_REMOVE" and evenement != "GUILD_MEMBER_UPDATE" and evenement != "GUILD_BAN_ADD" and evenement != "GUILD_BAN_REMOVE" and evenement != "GUILD_ROLE_CREATE" and evenement != "GUILD_ROLE_DELETE" and evenement != "CHANNEL_CREATE" and evenement != "CHANNEL_DELETE" and evenement != "VOICE_STATE_UPDATE" and evenement != "NOLIAE_TICK" { return false }
+            if acl_serveur_bloque(js) { return false }
+            if acl_utilisateur_bloque(js) { return false }
+            if acl_maintenance() { return false }
+            if evenement == "MESSAGE_CREATE" and unwrap_or(json_chemin_texte(js, "d.author.bot"), "") == "true" { return false }
+            if evenement == "MESSAGE_UPDATE" or evenement == "MESSAGE_DELETE" {
+                let guild_log = unwrap_or(json_chemin_texte(js, "d.guild_id"), "")
+                let message_log = unwrap_or(json_chemin_texte(js, "d.id"), "")
+                let auteur_log = unwrap_or(json_chemin_texte(js, "d.author.id"), "system")
+                let salon_log = unwrap_or(json_chemin_texte(js, "d.channel_id"), "")
+                if guild_log != "" and message_log != "" {
+                    var action_log = "message_delete"
+                    var raison_log = "Message supprimé dans " + salon_log
+                    if evenement == "MESSAGE_UPDATE" { action_log = "message_update"; raison_log = "Message modifié dans " + salon_log + " : " + unwrap_or(json_chemin_texte(js, "d.content"), "(contenu non fourni)") }
+                    let _audit_message = store_log_action(guild_log, auteur_log, action_log, message_log, raison_log)
+                }
+                return false
+            }
+            if evenement == "GUILD_MEMBER_UPDATE" or evenement == "GUILD_BAN_ADD" or evenement == "GUILD_BAN_REMOVE" or evenement == "GUILD_ROLE_CREATE" or evenement == "GUILD_ROLE_DELETE" or evenement == "CHANNEL_CREATE" or evenement == "CHANNEL_DELETE" {
+                let guild_admin_log = unwrap_or(json_chemin_texte(js, "d.guild_id"), "")
+                var cible_admin_log = unwrap_or(json_chemin_texte(js, "d.user.id"), "")
+                if cible_admin_log == "" { cible_admin_log = unwrap_or(json_chemin_texte(js, "d.role.id"), unwrap_or(json_chemin_texte(js, "d.id"), "")) }
+                var action_admin_log = "guild_member_update"
+                if evenement == "GUILD_BAN_ADD" { action_admin_log = "ban_add" }
+                if evenement == "GUILD_BAN_REMOVE" { action_admin_log = "ban_remove" }
+                if evenement == "GUILD_ROLE_CREATE" { action_admin_log = "role_create" }
+                if evenement == "GUILD_ROLE_DELETE" { action_admin_log = "role_delete" }
+                if evenement == "CHANNEL_CREATE" { action_admin_log = "channel_create" }
+                if evenement == "CHANNEL_DELETE" { action_admin_log = "channel_delete" }
+                if guild_admin_log != "" {
+                    let _audit_admin = store_log_action(guild_admin_log, "system", action_admin_log, cible_admin_log, "Événement Discord reçu")
+                    let seuil_nuke = unwrap_or(parse_int(unwrap_or(store_lire(guild_admin_log, "security.nuke_threshold"), "0")), 0)
+                    var action_nuke = false
+                    if action_admin_log == "ban_add" or action_admin_log == "channel_delete" or action_admin_log == "role_delete" { action_nuke = true }
+                    if module_evenement_actif(guild_admin_log, "security") and action_nuke and seuil_nuke > 0 {
+                        let occurrences_nuke = store_compter_recent(guild_admin_log, action_admin_log, 60)
+                        if occurrences_nuke >= seuil_nuke and not acl_maintenance_serveur("{\"guild_id\":\"" + guild_admin_log + "\"}") {
+                            let _urgence = store_configurer(guild_admin_log, "maintenance", "true")
+                            let _audit_urgence = store_log_action(guild_admin_log, "system", "nuke_emergency", guild_admin_log, "Mode urgence après " + text(occurrences_nuke) + " actions sensibles")
+                            let _notify_urgence = notifier_log_serveur(token, guild_admin_log, "RAID", guild_admin_log, "🚨 Mode urgence anti-nuke activé")
+                        }
+                    }
+                }
+                return false
+            }
+            if evenement == "VOICE_STATE_UPDATE" {
+                let guild_voice = unwrap_or(json_chemin_texte(js, "d.guild_id"), "")
+                if not module_evenement_actif(guild_voice, "voice") { return false }
+                let user_voice = unwrap_or(json_chemin_texte(js, "d.member.user.id"), unwrap_or(json_chemin_texte(js, "d.user_id"), ""))
+                let channel_voice = json_chemin_texte(js, "d.channel_id")
+                let ancien_salon_voice = unwrap_or(store_lire(guild_voice, "voice.current." + user_voice), "")
+                let nouveau_salon_voice = unwrap_or(channel_voice, "")
+                if ancien_salon_voice != "" and ancien_salon_voice != nouveau_salon_voice {
+                    let _retire_membre_voice = store_supprimer(guild_voice, "voice.temp.member." + ancien_salon_voice + "." + user_voice)
+                    if store_compter_cles_prefixe(guild_voice, "voice.temp.member." + ancien_salon_voice + ".") == 0 and has(store_lire(guild_voice, "voice.temp." + ancien_salon_voice)) {
+                        let _supprime_salon_vide = discord_supprimer_salon(token, ancien_salon_voice)
+                        let _supprime_registre_vide = store_supprimer(guild_voice, "voice.temp." + ancien_salon_voice)
+                    }
+                }
+                if nouveau_salon_voice != "" {
+                    let _enregistre_courant_voice = store_configurer(guild_voice, "voice.current." + user_voice, nouveau_salon_voice)
+                    if has(store_lire(guild_voice, "voice.temp." + nouveau_salon_voice)) { let _ajoute_membre_voice = store_configurer(guild_voice, "voice.temp.member." + nouveau_salon_voice + "." + user_voice, "1") }
+                } else { let _oublie_courant_voice = store_supprimer(guild_voice, "voice.current." + user_voice) }
+                let debut_voice = unwrap_or(parse_int(unwrap_or(store_lire(guild_voice, "voice.started." + user_voice), "0")), 0)
+                let maintenant_voice = epoch_maintenant()
+                if debut_voice > 0 and maintenant_voice > debut_voice and maintenant_voice - debut_voice <= 86400 {
+                    let _voice_time = store_ajouter_temps_vocal(guild_voice, user_voice, maintenant_voice - debut_voice)
+                    if not has(channel_voice) or unwrap_or(channel_voice, "") == "" {
+                        let total_voice = store_somme_prefixe(guild_voice, "voice.seconds." + user_voice)
+                        let seuil_role = unwrap_or(parse_int(unwrap_or(store_lire(guild_voice, "voice.role_seconds"), "0")), 0)
+                        let role_voice = store_lire(guild_voice, "voice.role_id")
+                        if seuil_role > 0 and total_voice >= seuil_role and has(role_voice) and user_voice != "" { let _role_voice = discord_ajouter_role(token, guild_voice, user_voice, unwrap_or(role_voice, "")) }
+                    }
+                }
+                var action_voice = "voice_leave"
+                var cible_voice = ""
+                if has(channel_voice) and unwrap_or(channel_voice, "") != "" { cible_voice = unwrap_or(channel_voice, ""); action_voice = "voice_join"; let _voice_start = store_configurer(guild_voice, "voice.started." + user_voice, text(maintenant_voice)) } else { let _voice_clear = store_supprimer(guild_voice, "voice.started." + user_voice) }
+                let _voice_audit = store_log_action(guild_voice, user_voice, action_voice, cible_voice, "État vocal")
+                return false
+            }
+            if evenement == "NOLIAE_TICK" {
+                let _tick_system = store_configurer("_system", "health.last_tick", text(epoch_maintenant()))
+                let _tick_audit = store_log_action("_system", "gateway", "gateway_tick", "", "Tick planifié")
+                let guildes = store_lister_guildes()
+                if has(guildes) {
+                    var reste_guildes = unwrap_or(guildes, "")
+                    while reste_guildes != "" {
+                        let separateur = find(reste_guildes, ",")
+                        var guild_tick = reste_guildes
+                        if has(separateur) { guild_tick = sub(reste_guildes, 0, unwrap_or(separateur, 0)) }
+                        traiter_rappels_echeance(token, guild_tick)
+                        traiter_flux_rss_echeance(token, guild_tick)
+                        traiter_calendriers_echeance(token, guild_tick)
+                        traiter_twitch_echeance(token, guild_tick)
+                        traiter_invitations_echeance(token, guild_tick)
+                        traiter_rapports_echeance(token, guild_tick)
+                        if not has(separateur) { break }
+                        let suite = unwrap_or(separateur, 0) + 1
+                        reste_guildes = sub(reste_guildes, suite, len(reste_guildes) - suite)
+                    }
+                }
+                return false
+            }
+            let salon = unwrap_or(json_chemin_texte(js, "d.channel_id"), "")
+            let message = unwrap_or(json_chemin_texte(js, "d.id"), "")
+            let contenu = unwrap_or(json_chemin_texte(js, "d.content"), "")
+            if evenement == "GUILD_MEMBER_ADD" {
+                let guild = unwrap_or(json_chemin_texte(js, "d.guild_id"), "")
+                let community_active = module_evenement_actif(guild, "community")
+                let membre = unwrap_or(json_chemin_texte(js, "d.user.id"), "")
+                let securite_active = module_evenement_actif(guild, "security")
+                let _audit = store_log_action(guild, membre, "member_join", membre, "Arrivée d’un membre")
+                let limite = unwrap_or(parse_int(unwrap_or(store_lire(guild, "raid.join_limit"), "0")), 0)
+                let fenetre = unwrap_or(parse_int(unwrap_or(store_lire(guild, "raid.window_seconds"), "60")), 60)
+                let joins = store_compter_recent(guild, "member_join", fenetre)
+                if securite_active and limite > 0 and joins >= limite {
+                    let _raid = store_log_action(guild, membre, "raid_block", membre, "Seuil d’arrivées dépassé")
+                    let _raid_notify = notifier_log_serveur(token, guild, "RAID", membre, "Seuil d’arrivées dépassé")
+                    let action_raid = unwrap_or(store_lire(guild, "raid.action"), "passive")
+                    if action_raid == "kick" {
+                        let expulse = discord_expulser_identifiant(token, guild, membre)
+                        let _action = store_log_action(guild, membre, "raid_kick", membre, "Expulsion anti-raid : " + text(expulse))
+                    }
+                    return false
+                }
+                let age_minimum = unwrap_or(parse_int(unwrap_or(store_lire(guild, "security.recent_account_seconds"), "0")), 0)
+                if securite_active and age_minimum > 0 and membre != "" {
+                    let identifiant_membre = parse_int(membre)
+                    if has(identifiant_membre) {
+                        let creation_ms = bit_shr(unwrap_or(identifiant_membre, 0), 22) + 1420070400000
+                        let age_secondes = (epoch_maintenant() * 1000 - creation_ms) / 1000
+                        if age_secondes >= 0 and age_secondes < age_minimum {
+                            let _recent_audit = store_log_action(guild, membre, "recent_account", membre, "Compte créé il y a " + text(age_secondes) + " seconde(s)")
+                            let _recent_notify = notifier_log_serveur(token, guild, "RAID", membre, "Compte trop récent détecté")
+                            let action_recent = unwrap_or(store_lire(guild, "security.recent_account_action"), "passive")
+                            if action_recent == "kick" {
+                                let expulse_recent = discord_expulser_identifiant(token, guild, membre)
+                                let _recent_action = store_log_action(guild, membre, "recent_account_kick", membre, "Expulsion compte récent : " + text(expulse_recent))
+                                return false
+                            }
+                        }
+                    }
+                }
+                if not community_active { return false }
+                var accueil = store_lire(guild, "welcome_channel")
+                var role = store_lire(guild, "auto_role")
+                if community_active and has(role) and membre != "" { let _role = discord_ajouter_role(token, guild, membre, unwrap_or(role, "")) }
+                let role_non_verifie = store_lire(guild, "verification.unverified_role_id")
+                let timeout_verification = unwrap_or(parse_int(unwrap_or(store_lire(guild, "verification.timeout_seconds"), "0")), 0)
+                if has(role_non_verifie) and membre != "" { let _role_pending = discord_ajouter_role(token, guild, membre, unwrap_or(role_non_verifie, "")) }
+                if timeout_verification > 0 and membre != "" { let _pending = store_configurer(guild, "verification.pending." + membre, text(epoch_maintenant())) }
+                var texte_accueil = unwrap_or(store_lire(guild, "welcome_message"), "👋 Bienvenue <@{user}> !")
+                if has(accueil) and membre != "" { return discord_envoie_message(token, unwrap_or(accueil, ""), remplace(texte_accueil, "{user}", "<@" + membre + ">")) }
+                return false
+            }
+            if evenement == "GUILD_MEMBER_REMOVE" {
+                let guild = unwrap_or(json_chemin_texte(js, "d.guild_id"), "")
+                if not module_evenement_actif(guild, "community") { return false }
+                var depart = store_lire(guild, "goodbye_channel")
+                let membre = unwrap_or(json_chemin_texte(js, "d.user.id"), "")
+                let _audit = store_log_action(guild, membre, "member_leave", membre, "Départ d’un membre")
+                let texte_depart = unwrap_or(store_lire(guild, "goodbye_message"), "👋 <@{user}> a quitté le serveur.")
+                if has(depart) and membre != "" { return discord_envoie_message(token, unwrap_or(depart, ""), remplace(texte_depart, "{user}", "<@" + membre + ">")) }
+                return false
+            }
+            if salon == "" { return false }
+            let guild = unwrap_or(json_chemin_texte(js, "d.guild_id"), "")
+            let auteur = unwrap_or(json_chemin_texte(js, "d.author.id"), "")
+            let securite_active = module_evenement_actif(guild, "security")
+            traiter_flux_rss_echeance(token, guild)
+            traiter_calendriers_echeance(token, guild)
+            traiter_rappels_echeance(token, guild)
+            traiter_verifications_echeance(token, guild)
+            let limite_spam = unwrap_or(parse_int(unwrap_or(store_lire(guild, "antispam.max_messages"), "0")), 0)
+            let fenetre_spam = unwrap_or(parse_int(unwrap_or(store_lire(guild, "antispam.window_seconds"), "10")), 10)
+            let messages_recents = store_compter_recent(guild, "message:" + auteur, fenetre_spam)
+            if securite_active and limite_spam > 0 and messages_recents >= limite_spam {
+                let supprime = discord_supprimer_message(token, salon, message)
+                let _audit_spam = store_log_action(guild, auteur, "antispam_delete", salon, message)
+                let _spam_notify = notifier_log_serveur(token, guild, "ANTISPAM", auteur, "Message supprimé dans " + salon)
+                return supprime
+            }
+            let caps_active = store_lire(guild, "automod.caps")
+            if securite_active and has(caps_active) and (unwrap_or(caps_active, "") == "true" or unwrap_or(caps_active, "") == "1") and message_trop_majuscule(contenu) {
+                let supprime = discord_supprimer_message(token, salon, message)
+                if supprime {
+                    let _audit_caps = store_log_action(guild, auteur, "automod_caps_delete", salon, message)
+                    let _notify_caps = notifier_log_serveur(token, guild, "AUTOMOD", auteur, "Message majoritairement en majuscules supprimé dans " + salon)
+                }
+                return supprime
+            }
+            let mentions_active = store_lire(guild, "automod.mentions")
+            if securite_active and has(mentions_active) and (unwrap_or(mentions_active, "") == "true" or unwrap_or(mentions_active, "") == "1") and occurrences(contenu, "<@") >= 5 {
+                let supprime = discord_supprimer_message(token, salon, message)
+                if supprime {
+                    let _audit_mentions = store_log_action(guild, auteur, "automod_mentions_delete", salon, message)
+                    let _notify_mentions = notifier_log_serveur(token, guild, "AUTOMOD", auteur, "Mentions massives supprimées dans " + salon)
+                }
+                return supprime
+            }
+            let mots_interdits = store_lire(guild, "automod.banned_words")
+            if securite_active and has(mots_interdits) {
+                let mot_detecte = contient_mot_interdit(contenu, unwrap_or(mots_interdits, ""))
+                if mot_detecte != "" {
+                    let supprime = discord_supprimer_message(token, salon, message)
+                    if supprime {
+                        let _audit_mot = store_log_action(guild, auteur, "automod_word_delete", salon, mot_detecte)
+                        let _notify_mot = notifier_log_serveur(token, guild, "AUTOMOD", auteur, "Mot interdit détecté dans " + salon)
+                    }
+                    return supprime
+                }
+            }
+            let doublons_actifs = store_lire(guild, "automod.duplicates")
+            if securite_active and len(contenu) > 0 and len(contenu) <= 500 and has(doublons_actifs) and (unwrap_or(doublons_actifs, "") == "true" or unwrap_or(doublons_actifs, "") == "1") {
+                let cle_dernier = "automod.last_message." + auteur
+                let dernier_contenu = store_lire(guild, cle_dernier)
+                if has(dernier_contenu) and unwrap_or(dernier_contenu, "") == contenu {
+                    let supprime = discord_supprimer_message(token, salon, message)
+                    if supprime {
+                        let _audit_doublon = store_log_action(guild, auteur, "automod_duplicate_delete", salon, message)
+                        let _notify_doublon = notifier_log_serveur(token, guild, "AUTOMOD", auteur, "Message dupliqué supprimé dans " + salon)
+                    }
+                    return supprime
+                }
+                let _memorise_doublon = store_configurer(guild, cle_dernier, contenu)
+            }
+            let _audit = store_log_action(guild, auteur, "message:" + auteur, salon, "Message reçu")
+            let xp_active = store_lire(guild, "xp.enabled")
+            let xp_exclu_salon = store_lire(guild, "xp.exclude.channel." + salon)
+            var xp_exclu_role = false
+            var index_role_xp = 0
+            while index_role_xp < 64 {
+                let role_membre_xp = json_chemin_texte(js, "d.member.roles." + text(index_role_xp))
+                if has(role_membre_xp) and has(store_lire(guild, "xp.exclude.role." + unwrap_or(role_membre_xp, ""))) { xp_exclu_role = true; break }
+                index_role_xp = index_role_xp + 1
+            }
+            var multiplicateur_xp = unwrap_or(parse_int(unwrap_or(store_lire(guild, "xp.multiplier"), "1")), 1)
+            if multiplicateur_xp < 1 { multiplicateur_xp = 1 }
+            if multiplicateur_xp > 10 { multiplicateur_xp = 10 }
+            let cooldown_xp = unwrap_or(parse_int(unwrap_or(store_lire(guild, "xp.cooldown_seconds"), "0")), 0)
+            let dernier_xp = unwrap_or(parse_int(unwrap_or(store_lire(guild, "xp.last." + auteur), "0")), 0)
+            let maintenant_xp = epoch_maintenant()
+            let cooldown_ok_xp = cooldown_xp <= 0 or maintenant_xp - dernier_xp >= cooldown_xp
+            if module_evenement_actif(guild, "fun") and has(xp_active) and unwrap_or(xp_active, "") == "true" and cooldown_ok_xp and not xp_exclu_role and not (has(xp_exclu_salon) and (unwrap_or(xp_exclu_salon, "") == "true" or unwrap_or(xp_exclu_salon, "") == "1")) {
+                let ancien_xp = unwrap_or(parse_int(unwrap_or(store_lire(guild, "xp.user." + auteur), "0")), 0)
+                let nouveau_xp = store_ajouter_xp(guild, auteur, multiplicateur_xp)
+                let _save_last_xp = store_configurer(guild, "xp.last." + auteur, text(maintenant_xp))
+                let niveau = nouveau_xp / 100
+                if niveau > ancien_xp / 100 {
+                    let role_niveau = store_lire(guild, "xp.role." + text(niveau))
+                    if has(role_niveau) and auteur != "" { let _role_niveau = discord_ajouter_role(token, guild, auteur, unwrap_or(role_niveau, "")) }
+                }
+            }
+            var anti_invites = store_lire(guild, "automod.invites")
+            if securite_active and has(anti_invites) and unwrap_or(anti_invites, "") == "1" and (contains(contenu, "discord.gg/") or contains(contenu, "discord.com/invite/")) {
+                let supprime = discord_supprimer_message(token, salon, message)
+                if supprime {
+                    let _audit = store_log_action(guild, auteur, "automod_invite_delete", salon, message)
+                    let _notify = notifier_log_serveur(token, guild, "AUTOMOD", auteur, "Invitation supprimée dans " + salon)
+                    print("Automod : invitation supprimée dans " + salon)
+                }
+                return supprime
+            }
+            var anti_liens = store_lire(guild, "automod.links")
+            if has(anti_liens) and unwrap_or(anti_liens, "") == "1" and (contains(contenu, "http://") or contains(contenu, "https://")) {
+                let supprime = discord_supprimer_message(token, salon, message)
+                if supprime {
+                    let _audit = store_log_action(guild, auteur, "automod_link_delete", salon, message)
+                    let _notify = notifier_log_serveur(token, guild, "AUTOMOD", auteur, "Lien supprimé dans " + salon)
+                    print("Automod : lien supprimé dans " + salon)
+                }
+                return supprime
+            }
+            var prefixe = store_lire(guild, "prefix")
+            let prefixe_effectif = unwrap_or(prefixe, "!")
+            if prefixe_effectif == "" { return false }
+            if contenu == prefixe_effectif + "ping" { return discord_envoie_message(token, salon, "🏓 Pong !") }
+            let debut_echo = len(prefixe_effectif) + 5
+            if starts_with(contenu, prefixe_effectif + "echo ") and len(contenu) > debut_echo { return discord_envoie_message(token, salon, sub(contenu, debut_echo, len(contenu) - debut_echo)) }
+            return false
+    })
+}
+
+fn main() {
+    let arguments = args()
+    if len(arguments) >= 1 and get(arguments, 0) == "gateway" { mode_gateway(); return }
+    if not store_initialiser("noliae-discord.sqlite3") { print("Impossible d’ouvrir la base SQLite."); return }
+    let _db_init = store_configurer("_system", "schema_version", "2")
+    let a = args()
+    if len(a) >= 2 and get(a, 0) == "setup-public-key" {
+        let cle_publique = get(a, 1)
+        if len(cle_publique) < 32 or not store_configurer("_system", "discord.public_key", cle_publique) {
+            print("❌ Clé publique Discord invalide ou impossible à enregistrer.")
+            return
+        }
+        print("✅ Clé publique Discord enregistrée dans SQLite.")
+        return
+    }
+    if len(a) >= 1 and get(a, 0) == "register" {
+        let app = env("DISCORD_APP_ID")
+        let tok = env("DISCORD_BOT_TOKEN")
+        if has(app) and has(tok) and discord_enregistrer_commandes(unwrap_or(app, ""), unwrap_or(tok, ""), commandes_json()) {
+            print("✅ Commandes enregistrées.")
+        } else { print("❌ DISCORD_APP_ID/DISCORD_BOT_TOKEN requis ou enregistrement échoué.") }
+        return
+    }
+    let pko = store_lire("_system", "discord.public_key")
+    if not has(pko) or not sodium_prete() { print("Clé publique Discord SQLite ou libsodium manquant. Lance `./bot setup-public-key <cle>` une fois."); return }
+    var pre: List<Fn(Requete) -> Option<Reponse>> = []
+    push(pre, fn (req: Requete) -> Option<Reponse> { return discord_verifie_ou_401(req, unwrap_or(pko, "")) })
+    var port = 8080
+    let so = tcp_listen(port)
+    if not has(so) { print("Port indisponible : " + text(port)); return }
+    let srv = unwrap_or(so, -1)
+    print("Bot Noliae à l'écoute sur le port " + text(port))
+    while true {
+        let co = tcp_accept(srv)
+        if has(co) { let fd = unwrap_or(co, -1); tcp_set_timeout(fd, 5000); servir(fd, pre); tcp_close(fd) }
+    }
+}

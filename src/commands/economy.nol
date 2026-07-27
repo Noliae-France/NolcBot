@@ -1,0 +1,59 @@
+import "nolc-discord::src/lib.nol"
+import "../store.nol"
+import "../time.nol"
+
+fn commande_economie(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom != "balance" and nom != "leaderboard" and nom != "daily" and nom != "weekly" and nom != "work" and nom != "shop" and nom != "buy" and nom != "inventory" and nom != "transactions" and nom != "pay" { return none }
+    let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+    let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+    if nom == "balance" { return some(discord_reponse_ephemere("💰 Solde de <@" + user + "> : **" + text(store_solde(guild, user)) + "** pièces")) }
+    if nom == "leaderboard" {
+        let meilleur = store_meilleur_solde(guild)
+        if not has(meilleur) { return some(discord_reponse_ephemere("🏆 Aucun solde enregistré sur ce serveur.")) }
+        let valeur = unwrap_or(meilleur, "")
+        let separateur = find(valeur, "|")
+        if not has(separateur) { return some(discord_reponse_ephemere("🏆 Classement indisponible.")) }
+        let i = unwrap_or(separateur, 0)
+        return some(discord_reponse_message("🏆 **Classement économie**\n🥇 <@" + sub(valeur, 0, i) + "> — **" + sub(valeur, i + 1, len(valeur) - i - 1) + "** pièces"))
+    }
+    if nom == "daily" {
+        let nouveau = store_reclamer_daily(guild, user, epoch_maintenant())
+        if nouveau >= 0 { let _audit = store_log_action(guild, user, "economy_daily", user, "Récompense quotidienne"); return some(discord_reponse_message("🎁 Récompense quotidienne : **100** pièces. Solde : **" + text(nouveau) + "**.")) }
+        return some(discord_reponse_ephemere("❌ Récompense quotidienne déjà récupérée ou indisponible."))
+    }
+    if nom == "weekly" {
+        let nouveau = store_reclamer_weekly(guild, user, epoch_maintenant())
+        if nouveau >= 0 { let _audit = store_log_action(guild, user, "economy_weekly", user, "Récompense hebdomadaire"); return some(discord_reponse_message("🎁 Récompense hebdomadaire : **500** pièces. Solde : **" + text(nouveau) + "**.")) }
+        return some(discord_reponse_ephemere("❌ Récompense hebdomadaire déjà récupérée ou indisponible."))
+    }
+    if nom == "work" {
+        let recompense = (mono_ms() % 151) + 50
+        let nouveau = store_reclamer_work(guild, user, epoch_maintenant(), recompense)
+        if nouveau >= 0 { let _audit = store_log_action(guild, user, "economy_work", user, text(recompense) + " pièces"); return some(discord_reponse_message("💼 Travail terminé : **" + text(recompense) + "** pièces. Solde : **" + text(nouveau) + "**.")) }
+        return some(discord_reponse_ephemere("⏳ Tu as déjà travaillé récemment. Reviens dans une heure."))
+    }
+    if nom == "shop" { return some(discord_reponse_message("🛒 **Boutique**\n`coffee` — 100 pièces\n`ticket` — 250 pièces\n`gem` — 1000 pièces\nUtilise `/buy objet quantité`.")) }
+    if nom == "buy" {
+        let objet = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), ""))
+        let quantite = unwrap_or(json_chemin_int(req.corps, "data.options.1.value"), 0)
+        var prix = 0
+        if objet == "coffee" { prix = 100 }
+        if objet == "ticket" { prix = 250 }
+        if objet == "gem" { prix = 1000 }
+        if prix == 0 or quantite < 1 or quantite > 100 { return some(discord_reponse_ephemere("❌ Objet inconnu ou quantité invalide.")) }
+        if store_acheter(guild, user, objet, prix, quantite) { let _audit = store_log_action(guild, user, "economy_buy", objet, text(quantite)); return some(discord_reponse_message("✅ Achat effectué : " + text(quantite) + " × `" + objet + "`.")) }
+        return some(discord_reponse_ephemere("❌ Solde insuffisant ou achat impossible."))
+    }
+    if nom == "inventory" { return some(discord_reponse_ephemere("🎒 Inventaire\n☕ coffee : " + unwrap_or(store_lire(guild, "economy.inventory." + user + ".coffee"), "0") + "\n🎟️ ticket : " + unwrap_or(store_lire(guild, "economy.inventory." + user + ".ticket"), "0") + "\n💎 gem : " + unwrap_or(store_lire(guild, "economy.inventory." + user + ".gem"), "0"))) }
+    if nom == "transactions" {
+        let historique = store_historique_economie(guild, user)
+        if has(historique) { return some(discord_reponse_ephemere("🧾 Tes 10 dernières opérations économie :\n" + unwrap_or(historique, ""))) }
+        return some(discord_reponse_ephemere("Aucune transaction enregistrée."))
+    }
+    let cible = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+    let montant = unwrap_or(json_chemin_int(req.corps, "data.options.1.value"), 0)
+    if cible == "" or montant < 1 or cible == user { return some(discord_reponse_ephemere("Usage : `/pay membre montant`.")) }
+    if not store_transferer(guild, user, cible, montant) { return some(discord_reponse_ephemere("❌ Solde insuffisant ou transfert impossible.")) }
+    let _audit = store_log_action(guild, user, "economy_pay", cible, text(montant))
+    return some(discord_reponse_message("💸 Paiement envoyé à <@" + cible + "> : **" + text(montant) + "** pièces. Solde : **" + text(store_solde(guild, user)) + "**."))
+}

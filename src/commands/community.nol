@@ -1,0 +1,175 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../discord_api.nol"
+import "../integrations.nol"
+import "../store.nol"
+
+fn community_cle_plan(user: Text) -> Text { return "community.ai.plan." + user }
+
+fn community_enregistrer_brouillon(guild: Text, user: Text, action: Text, salon: Text, contenu: Text) -> Bool {
+    return store_configurer(guild, community_cle_plan(user), action + "|" + salon + "|" + contenu)
+}
+
+fn community_champ(texte: Text, rang: Int) -> Text {
+    var reste = texte
+    var courant = 0
+    while courant < rang {
+        let sep = find(reste, "|")
+        if not has(sep) { return "" }
+        let depart = unwrap_or(sep, 0) + 1
+        reste = sub(reste, depart, len(reste) - depart)
+        courant = courant + 1
+    }
+    let fin = find(reste, "|")
+    if has(fin) { return sub(reste, 0, unwrap_or(fin, 0)) }
+    return reste
+}
+
+fn community_reste(texte: Text, rang: Int) -> Text {
+    var reste = texte
+    var courant = 0
+    while courant < rang {
+        let sep = find(reste, "|")
+        if not has(sep) { return "" }
+        let depart = unwrap_or(sep, 0) + 1
+        reste = sub(reste, depart, len(reste) - depart)
+        courant = courant + 1
+    }
+    return reste
+}
+
+fn community_generation(guild: Text, user: Text, salon: Text, action: Text, prompt: Text) -> Option<Reponse> {
+    let reponse = integration_ai(guild, prompt)
+    if not has(reponse) { return some(discord_reponse_ephemere("❌ IA indisponible ou non configurée.")) }
+    var texte_genere = integration_texte_sans_mentions(unwrap_or(reponse, ""))
+    if len(texte_genere) > 1800 { texte_genere = sub(texte_genere, 0, 1800) }
+    if action == "publish" {
+        if salon == "" { return some(discord_reponse_ephemere("❌ Salon cible manquant.")) }
+        if community_enregistrer_brouillon(guild, user, action, salon, texte_genere) {
+            let _audit = store_log_action(guild, user, "community_ai_draft", salon, texte_genere)
+            return some(discord_reponse_ephemere("🧠 Brouillon communauté prêt :\n```\n" + texte_genere + "\n```\nRien n'est publié sans confirmation. Utilise `/community_confirm`."))
+        }
+        return some(discord_reponse_ephemere("❌ Brouillon non enregistré."))
+    }
+    return some(discord_reponse_message("🧠 " + texte_genere))
+}
+
+fn commande_community(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom == "announce" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let salon = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let message = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let token = bot_token()
+        if salon == "" or message == "" or not has(token) { return some(discord_reponse_ephemere("Usage : `/announce salon message`.")) }
+        if discord_envoie_message(unwrap_or(token, ""), salon, message) {
+            let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+            let actor = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+            let _log = store_log_action(guild, actor, "announce", salon, message)
+            return some(discord_reponse_ephemere("✅ Annonce publiée."))
+        }
+        return some(discord_reponse_ephemere("❌ Impossible de publier l’annonce."))
+    }
+    if nom == "faq" {
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let actor_faq = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        let action = unwrap_or(json_chemin_texte(req.corps, "data.options.0.name"), "")
+        let question = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.0.value"), ""))
+        let reponse_faq = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.1.value"), "")
+        if action == "lister" {
+            let liste = store_lister_faq(guild)
+            if has(liste) { return some(discord_reponse_ephemere("📚 Questions FAQ configurées :\n" + unwrap_or(liste, ""))) }
+            return some(discord_reponse_ephemere("📚 Aucune FAQ configurée."))
+        }
+        if question == "" or len(question) > 120 { return some(discord_reponse_ephemere("❌ Question FAQ invalide.")) }
+        let cle = "faq." + question
+        if action == "ajouter" {
+            if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+            if reponse_faq == "" or len(reponse_faq) > 1500 { return some(discord_reponse_ephemere("❌ Réponse FAQ invalide.")) }
+            if store_configurer(guild, cle, reponse_faq) {
+                let _audit_add = store_log_action(guild, actor_faq, "faq_add", question, "Réponse FAQ enregistrée")
+                return some(discord_reponse_ephemere("✅ FAQ enregistrée."))
+            }
+            return some(discord_reponse_ephemere("❌ Impossible d’enregistrer la FAQ."))
+        }
+        if action == "supprimer" {
+            if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+            if store_supprimer(guild, cle) {
+                let _audit_del = store_log_action(guild, actor_faq, "faq_delete", question, "Réponse FAQ supprimée")
+                return some(discord_reponse_ephemere("✅ FAQ supprimée."))
+            }
+            return some(discord_reponse_ephemere("❌ FAQ introuvable ou non supprimée."))
+        }
+        let faq_lue = store_lire(guild, cle)
+        if has(faq_lue) { return some(discord_reponse_message("❓ **" + question + "**\n" + integration_texte_sans_mentions(unwrap_or(faq_lue, "")))) }
+        return some(discord_reponse_ephemere("❓ Réponse FAQ absente."))
+    }
+    if nom == "community_event_ideas" {
+        let sujet = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        if sujet == "" or len(sujet) > 500 { return some(discord_reponse_ephemere("Usage : `/community_event_ideas sujet`.")) }
+        return community_generation(guild, user, "", "reply", "Propose 5 idées d'événements Discord concrètes, avec objectif, déroulé court, durée et récompense possible. Sujet serveur: " + sujet)
+    }
+    if nom == "community_rules" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let ton = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "clair")
+        let salon_rules = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let guild_rules = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let user_rules = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        return community_generation(guild_rules, user_rules, salon_rules, "publish", "Rédige un règlement Discord complet en français, ton " + ton + ", avec sections courtes: respect, spam, pub, vocal, sanctions, confidentialité, tickets et contact staff. Maximum 1600 caractères.")
+    }
+    if nom == "community_onboarding" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let salon_onboarding = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let cible = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "nouveaux membres")
+        let guild_onboarding = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let user_onboarding = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        return community_generation(guild_onboarding, user_onboarding, salon_onboarding, "publish", "Crée un message d'onboarding Discord en français pour " + cible + ". Inclure bienvenue, premières étapes, salon FAQ, tickets, règles, rôles utiles et appel à se présenter. Maximum 1600 caractères.")
+    }
+    if nom == "community_announce_ai" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let salon_ai = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let sujet_ai = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let guild_ai = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let user_ai = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        if sujet_ai == "" or len(sujet_ai) > 500 { return some(discord_reponse_ephemere("Usage : `/community_announce_ai salon sujet`.")) }
+        return community_generation(guild_ai, user_ai, salon_ai, "publish", "Rédige une annonce Discord claire, chaleureuse et professionnelle en français. Sujet: " + sujet_ai + ". Maximum 1500 caractères.")
+    }
+    if nom == "community_faq_ai_add" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let question_ai = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), ""))
+        let contexte_ai = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let guild_faq_ai = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let user_faq_ai = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        if question_ai == "" or len(question_ai) > 120 or contexte_ai == "" { return some(discord_reponse_ephemere("Usage : `/community_faq_ai_add question contexte`.")) }
+        let rep_ai = integration_ai(guild_faq_ai, "Rédige une réponse FAQ Discord en français, claire, courte, sans mentionner que tu es une IA. Question: " + question_ai + "\nContexte: " + contexte_ai)
+        if not has(rep_ai) { return some(discord_reponse_ephemere("❌ IA indisponible.")) }
+        var rep_faq_ai = integration_texte_sans_mentions(unwrap_or(rep_ai, ""))
+        if len(rep_faq_ai) > 1500 { rep_faq_ai = sub(rep_faq_ai, 0, 1500) }
+        if store_configurer(guild_faq_ai, "faq." + question_ai, rep_faq_ai) {
+            let _audit_faq_ai = store_log_action(guild_faq_ai, user_faq_ai, "faq_ai_add", question_ai, "Réponse FAQ générée")
+            return some(discord_reponse_ephemere("✅ FAQ générée et enregistrée :\n" + rep_faq_ai))
+        }
+        return some(discord_reponse_ephemere("❌ FAQ générée mais non enregistrée."))
+    }
+    if nom == "community_confirm" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let guild_confirm = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let user_confirm = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        let brouillon = store_lire(guild_confirm, community_cle_plan(user_confirm))
+        if not has(brouillon) { return some(discord_reponse_ephemere("❌ Aucun brouillon communauté en attente.")) }
+        let contenu = unwrap_or(brouillon, "")
+        let action_confirm = community_champ(contenu, 0)
+        let salon_confirm = community_champ(contenu, 1)
+        let message_confirm = community_reste(contenu, 2)
+        let token_confirm = bot_token()
+        if action_confirm != "publish" or salon_confirm == "" or message_confirm == "" or not has(token_confirm) { return some(discord_reponse_ephemere("❌ Brouillon invalide.")) }
+        if discord_envoie_message(unwrap_or(token_confirm, ""), salon_confirm, message_confirm) {
+            let _clear_confirm = store_supprimer(guild_confirm, community_cle_plan(user_confirm))
+            let _audit_confirm = store_log_action(guild_confirm, user_confirm, "community_confirm", salon_confirm, message_confirm)
+            return some(discord_reponse_ephemere("✅ Publication communauté envoyée."))
+        }
+        return some(discord_reponse_ephemere("❌ Publication impossible."))
+    }
+    return none
+}

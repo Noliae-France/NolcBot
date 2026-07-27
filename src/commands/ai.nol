@@ -1,0 +1,50 @@
+import "nolc-discord::src/lib.nol"
+import "../store.nol"
+import "../integrations.nol"
+import "../acl.nol"
+
+fn commande_ai(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom == "ai_config" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let fournisseur = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), ""))
+        let cle = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let modele = unwrap_or(json_chemin_texte(req.corps, "data.options.2.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        if (fournisseur != "openai" and fournisseur != "gemini" and fournisseur != "mistral") or cle == "" or modele == "" { return some(discord_reponse_ephemere("Fournisseurs : `openai`, `gemini` ou `mistral`.")) }
+        if store_configurer(guild, "ai.provider", fournisseur) and store_configurer(guild, "ai.api_key", cle) and store_configurer(guild, "ai.model", modele) {
+            let _audit = store_log_action(guild, unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "ai_config", fournisseur, modele)
+            return some(discord_reponse_ephemere("✅ IA configurée : `" + fournisseur + "` / `" + modele + "`. La clé est masquée."))
+        }
+        return some(discord_reponse_ephemere("❌ Impossible d’enregistrer la configuration IA."))
+    }
+    if nom == "ai" or nom == "summarize" or nom == "rewrite" or nom == "ideas" {
+        let contenu = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        var question = contenu
+        if nom == "summarize" { question = "Résume clairement et fidèlement le texte suivant en français, en conservant les informations importantes :\n" + contenu }
+        if nom == "rewrite" { question = "Réécris le texte suivant en français de manière claire, naturelle et professionnelle, sans changer son sens :\n" + contenu }
+        if nom == "ideas" { question = "Propose cinq idées concrètes et distinctes à partir du sujet suivant, en français :\n" + contenu }
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        let active = store_lire(guild, "ai.enabled")
+        if has(active) and unwrap_or(active, "") == "false" { return some(discord_reponse_ephemere("🤖 L’assistant IA est désactivé sur ce serveur.")) }
+        if store_compter_recent(guild, "ai_user:" + user, 60) >= 5 { return some(discord_reponse_ephemere("⏳ Limite IA atteinte : 5 requêtes par minute.")) }
+        let _usage = store_log_action(guild, user, "ai_user:" + user, "", "Requête IA")
+        let reponse = integration_ai(guild, question)
+        if has(reponse) { return some(discord_reponse_message("🤖 " + integration_texte_sans_mentions(unwrap_or(reponse, "")))) }
+        return some(discord_reponse_ephemere("❌ Assistant IA non configuré ou indisponible."))
+    }
+    if nom == "translate" {
+        let texte = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let langue = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        let active = store_lire(guild, "translate.enabled")
+        if has(active) and unwrap_or(active, "") == "false" { return some(discord_reponse_ephemere("🌍 La traduction est désactivée sur ce serveur.")) }
+        if store_compter_recent(guild, "translate_user:" + user, 60) >= 10 { return some(discord_reponse_ephemere("⏳ Limite traduction atteinte : 10 requêtes par minute.")) }
+        let _usage = store_log_action(guild, user, "translate_user:" + user, "", "Requête de traduction")
+        let traduction = integration_traduire(texte, langue)
+        if has(traduction) { return some(discord_reponse_message("🌍 " + integration_texte_sans_mentions(unwrap_or(traduction, "")))) }
+        return some(discord_reponse_ephemere("❌ Traduction indisponible ou service non configuré."))
+    }
+    return none
+}

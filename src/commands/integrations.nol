@@ -1,0 +1,197 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../discord_api.nol"
+import "../integration_policy.nol"
+import "../integrations.nol"
+import "../store.nol"
+
+fn integrations_partie(valeur: Text, index: Int) -> Text {
+    var reste = valeur
+    var i = 0
+    while i < index {
+        let separateur = find(reste, "|")
+        if not has(separateur) { return "" }
+        let debut = unwrap_or(separateur, 0) + 1
+        reste = sub(reste, debut, len(reste) - debut)
+        i = i + 1
+    }
+    if index < 2 {
+        let separateur = find(reste, "|")
+        if has(separateur) { return sub(reste, 0, unwrap_or(separateur, 0)) }
+    }
+    return reste
+}
+
+fn commande_integrations(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom == "webhook_test" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let contenu = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "Test webhook Noliae")
+        let token = env("DISCORD_BOT_TOKEN")
+        if not has(token) { return some(discord_reponse_ephemere("❌ DISCORD_BOT_TOKEN manquant.")) }
+        if discord_envoyer_webhook(unwrap_or(token, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), contenu) {
+            let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "webhook_test", "", "Envoi webhook")
+            return some(discord_reponse_message("✅ Webhook exécuté."))
+        }
+        return some(discord_reponse_ephemere("❌ Webhook non configuré ou refusé."))
+    }
+    if nom == "site_status" {
+        let url = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        if url == "" { return some(discord_reponse_ephemere("Usage : `/site_status https://exemple.fr/`. ")) }
+        let code = integration_site_statut(url)
+        if code >= 200 and code < 400 { return some(discord_reponse_message("🌐 Site accessible : HTTP " + text(code))) }
+        if code > 0 { return some(discord_reponse_ephemere("⚠️ Site joignable mais réponse HTTP " + text(code) + ".")) }
+        return some(discord_reponse_ephemere("❌ Vérification impossible : URL HTTPS invalide, cible refusée ou site inaccessible."))
+    }
+    if nom == "calendar" {
+        let url_calendar = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let event_calendar = integration_calendrier(url_calendar)
+        if has(event_calendar) { return some(discord_reponse_message(unwrap_or(event_calendar, ""))) }
+        return some(discord_reponse_ephemere("❌ Calendrier ICS indisponible ou URL refusée."))
+    }
+    if nom == "calendar_subscribe" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let url = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let channel = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+        if guild == "" or channel == "" or not integration_url_autorisee(url) { return some(discord_reponse_ephemere("❌ URL HTTPS publique de calendrier invalide.")) }
+        var index = 1
+        while index <= 5 and has(store_lire(guild, "calendar." + text(index) + ".url")) { index = index + 1 }
+        if index > 5 { return some(discord_reponse_ephemere("❌ Limite de 5 calendriers par serveur atteinte.")) }
+        if store_configurer(guild, "calendar." + text(index) + ".url", url) and store_configurer(guild, "calendar." + text(index) + ".channel", channel) {
+            let _clear_calendar = store_supprimer(guild, "calendar." + text(index) + ".title")
+            return some(discord_reponse_message("✅ Calendrier abonné dans ce salon. Vérification toutes les 15 minutes."))
+        }
+        return some(discord_reponse_ephemere("❌ Impossible d’enregistrer le calendrier."))
+    }
+    if nom == "calendar_unsubscribe" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let url = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        var index = 1
+        while index <= 5 {
+            if unwrap_or(store_lire(guild, "calendar." + text(index) + ".url"), "") == url {
+                let _u = store_supprimer(guild, "calendar." + text(index) + ".url")
+                let _c = store_supprimer(guild, "calendar." + text(index) + ".channel")
+                let _t = store_supprimer(guild, "calendar." + text(index) + ".title")
+                return some(discord_reponse_message("✅ Abonnement calendrier supprimé."))
+            }
+            index = index + 1
+        }
+        return some(discord_reponse_ephemere("❌ Aucun abonnement calendrier correspondant."))
+    }
+    if nom == "twitch_status" {
+        let chaine = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let statut_twitch = integration_twitch_statut(chaine)
+        if has(statut_twitch) { return some(discord_reponse_message(unwrap_or(statut_twitch, ""))) }
+        return some(discord_reponse_ephemere("❌ Twitch non configuré, chaîne invalide ou API indisponible."))
+    }
+    if nom == "twitch_subscribe" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let chaine = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let channel = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+        if not integration_identifiant_simple(chaine, 64) or guild == "" or channel == "" { return some(discord_reponse_ephemere("❌ Nom de chaîne Twitch invalide.")) }
+        if store_twitch_compter(guild) >= 10 { return some(discord_reponse_ephemere("❌ Limite de 10 chaînes Twitch par serveur atteinte.")) }
+        if store_twitch_abonner(guild, channel, lower(chaine)) { return some(discord_reponse_message("✅ Notifications Twitch activées dans <#" + channel + "> pour `" + lower(chaine) + "`.\nLe bot annoncera le live avec le lien https://www.twitch.tv/" + lower(chaine) + " dès le passage en direct.")) }
+        return some(discord_reponse_ephemere("❌ Impossible d’enregistrer la chaîne Twitch."))
+    }
+    if nom == "twitch_list" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let lignes = store_twitch_lister(guild)
+        if not has(lignes) { return some(discord_reponse_ephemere("Aucune chaîne Twitch suivie.")) }
+        var reste_twitch = unwrap_or(lignes, "")
+        var sortie_twitch = "🟣 **Chaînes Twitch suivies**\n"
+        while reste_twitch != "" {
+            let fin_twitch = find(reste_twitch, "\n")
+            var ligne_twitch = reste_twitch
+            if has(fin_twitch) { ligne_twitch = sub(reste_twitch, 0, unwrap_or(fin_twitch, 0)) }
+            let salon_twitch = integrations_partie(ligne_twitch, 0)
+            let nom_twitch = integrations_partie(ligne_twitch, 1)
+            let live_twitch = integrations_partie(ligne_twitch, 2)
+            var etat_twitch = "inconnu"
+            if live_twitch == "0" { etat_twitch = "hors ligne" }
+            if live_twitch == "1" { etat_twitch = "live" }
+            sortie_twitch += "<#" + salon_twitch + "> — `" + nom_twitch + "` — " + etat_twitch + "\n"
+            if not has(fin_twitch) { break }
+            let suite_twitch = unwrap_or(fin_twitch, 0) + 1
+            reste_twitch = sub(reste_twitch, suite_twitch, len(reste_twitch) - suite_twitch)
+        }
+        return some(discord_reponse_ephemere(sortie_twitch))
+    }
+    if nom == "twitch_unsubscribe" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let chaine = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), ""))
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        if store_twitch_desabonner(guild, chaine) { return some(discord_reponse_message("✅ Notifications Twitch supprimées.")) }
+        return some(discord_reponse_ephemere("❌ Aucune notification Twitch correspondante."))
+    }
+    if nom == "rss" {
+        let url = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        if url == "" { return some(discord_reponse_ephemere("Usage : `/rss https://exemple.fr/flux.xml`. ")) }
+        let titre = integration_rss_premier(url)
+        if has(titre) {
+            var titre_affiche = unwrap_or(titre, "")
+            if len(titre_affiche) > 500 { titre_affiche = sub(titre_affiche, 0, 497) + "..." }
+            return some(discord_reponse_message("📰 Premier élément RSS : **" + integration_texte_sans_mentions(titre_affiche) + "**"))
+        }
+        return some(discord_reponse_ephemere("❌ Flux RSS inaccessible, invalide ou sans titre exploitable."))
+    }
+    if nom == "rss_subscribe" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let url = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let channel = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+        if url == "" or guild == "" or channel == "" or not integration_url_autorisee(url) { return some(discord_reponse_ephemere("URL HTTPS publique invalide.")) }
+        if store_rss_compter(guild, url) >= 10 { return some(discord_reponse_ephemere("❌ Limite de 10 flux RSS par serveur atteinte.")) }
+        if store_rss_abonner(guild, channel, url) { return some(discord_reponse_message("✅ Flux RSS abonné dans ce salon. Vérification toutes les 5 minutes.")) }
+        return some(discord_reponse_ephemere("❌ Impossible d’enregistrer l’abonnement RSS."))
+    }
+    if nom == "rss_unsubscribe" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let url = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        if store_rss_desabonner(guild, url) { return some(discord_reponse_message("✅ Abonnement RSS supprimé.")) }
+        return some(discord_reponse_ephemere("❌ Aucun abonnement correspondant."))
+    }
+    if nom == "youtube_subscribe" or nom == "github_subscribe" or nom == "reddit_subscribe" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let identifiant = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let channel = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+        var flux: Option<Text> = none
+        if nom == "youtube_subscribe" { flux = integration_flux_youtube(identifiant) }
+        if nom == "github_subscribe" { flux = integration_flux_github(identifiant) }
+        if nom == "reddit_subscribe" { flux = integration_flux_reddit(identifiant) }
+        if not has(flux) or guild == "" or channel == "" { return some(discord_reponse_ephemere("❌ Identifiant invalide ou intégration indisponible.")) }
+        let url_flux = unwrap_or(flux, "")
+        if store_rss_compter(guild, url_flux) >= 10 { return some(discord_reponse_ephemere("❌ Limite de 10 flux par serveur atteinte.")) }
+        if store_rss_abonner(guild, channel, url_flux) {
+            if nom == "youtube_subscribe" { return some(discord_reponse_message("✅ Notifications YouTube activées dans <#" + channel + "> pour `" + identifiant + "`.\nLe bot annoncera les nouvelles vidéos avec un message dédié.")) }
+            return some(discord_reponse_message("✅ Notification persistante activée dans ce salon. Vérification toutes les 5 minutes."))
+        }
+        return some(discord_reponse_ephemere("❌ Impossible d’enregistrer cette notification."))
+    }
+    if nom == "youtube_list" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let lignes_youtube = store_rss_prefixe(guild, "https://www.youtube.com/feeds/videos.xml?channel_id=")
+        if not has(lignes_youtube) { return some(discord_reponse_ephemere("Aucune chaîne YouTube suivie.")) }
+        var reste_youtube = unwrap_or(lignes_youtube, "")
+        var sortie_youtube = "▶️ **Chaînes YouTube suivies**\n"
+        while reste_youtube != "" {
+            let fin_youtube = find(reste_youtube, "\n")
+            var ligne_youtube = reste_youtube
+            if has(fin_youtube) { ligne_youtube = sub(reste_youtube, 0, unwrap_or(fin_youtube, 0)) }
+            let salon_youtube = integrations_partie(ligne_youtube, 0)
+            let flux_youtube = integrations_partie(ligne_youtube, 1)
+            let channel_youtube = integration_youtube_channel_depuis_flux(flux_youtube)
+            sortie_youtube += "<#" + salon_youtube + "> — `" + channel_youtube + "`\n"
+            if not has(fin_youtube) { break }
+            let suite_youtube = unwrap_or(fin_youtube, 0) + 1
+            reste_youtube = sub(reste_youtube, suite_youtube, len(reste_youtube) - suite_youtube)
+        }
+        return some(discord_reponse_ephemere(sortie_youtube))
+    }
+    return none
+}

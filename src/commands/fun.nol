@@ -1,0 +1,222 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../store.nol"
+import "../time.nol"
+
+fn fun_de_aleatoire(faces: Int) -> Int {
+    if faces < 1 { return 1 }
+    let m = mono_ms()
+    let a = bit_xor(m, bit_shl(m, 13))
+    let b = bit_xor(a, bit_shr(a, 7))
+    let c = bit_xor(b, bit_shl(b, 17))
+    var r = c % faces
+    if r < 0 { r = r + faces }
+    return r + 1
+}
+
+fn fun_choix_depuis_texte(texte: Text) -> Text {
+    var nombre = 1
+    var position = 0
+    while position < len(texte) {
+        let prochain = find(sub(texte, position, len(texte) - position), "|")
+        if not has(prochain) { break }
+        nombre = nombre + 1
+        position = position + unwrap_or(prochain, 0) + 1
+    }
+    if nombre < 2 { return "" }
+    let index = fun_de_aleatoire(nombre) - 1
+    var debut = 0
+    var courant = 0
+    while courant < index {
+        let prochain = find(sub(texte, debut, len(texte) - debut), "|")
+        if not has(prochain) { return "" }
+        debut = debut + unwrap_or(prochain, 0) + 1
+        courant = courant + 1
+    }
+    let fin = find(sub(texte, debut, len(texte) - debut), "|")
+    if has(fin) { return sub(texte, debut, unwrap_or(fin, 0)) }
+    return sub(texte, debut, len(texte) - debut)
+}
+
+fn fun_morpion_case(plateau: Text, index: Int) -> Text { return sub(plateau, index, 1) }
+
+fn fun_morpion_gagne(plateau: Text, symbole: Text) -> Bool {
+    let lignes = ["012", "345", "678", "036", "147", "258", "048", "246"]
+    var i = 0
+    while i < len(lignes) {
+        let ligne = get(lignes, i)
+        if fun_morpion_case(plateau, unwrap_or(parse_int(sub(ligne, 0, 1)), 0)) == symbole and fun_morpion_case(plateau, unwrap_or(parse_int(sub(ligne, 1, 1)), 0)) == symbole and fun_morpion_case(plateau, unwrap_or(parse_int(sub(ligne, 2, 1)), 0)) == symbole { return true }
+        i = i + 1
+    }
+    return false
+}
+
+fn fun_morpion_plateau(plateau: Text) -> Text {
+    var sortie = ""
+    var i = 0
+    while i < 9 {
+        let valeur = fun_morpion_case(plateau, i)
+        var affichage = "·"
+        if valeur == "X" { affichage = "❌" }
+        if valeur == "O" { affichage = "⭕" }
+        sortie += affichage
+        if i == 2 or i == 5 { sortie += "\n─────────\n" } else if i < 8 { sortie += "│" }
+        i = i + 1
+    }
+    return sortie
+}
+
+fn commande_fun(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom == "roll" {
+        let fo = json_chemin_int(req.corps, "data.options.0.value")
+        var faces = unwrap_or(fo, 6)
+        if faces < 2 { faces = 6 }
+        if faces > 1000 { faces = 1000 }
+        let tirage = fun_de_aleatoire(faces)
+        return some(discord_reponse_message(f"🎲 Dé à ${faces} faces : **${tirage}**"))
+    }
+    if nom == "coin" {
+        var resultat = "Pile"
+        if fun_de_aleatoire(2) == 2 { resultat = "Face" }
+        return some(discord_reponse_message("🪙 " + resultat))
+    }
+    if nom == "8ball" {
+        let reponses = ["Oui.", "Non.", "Probablement.", "Demande plus tard.", "Les signes sont favorables."]
+        let choix = fun_de_aleatoire(len(reponses)) - 1
+        return some(discord_reponse_message("🎱 " + get(reponses, choix)))
+    }
+    if nom == "pfc" {
+        let joueur = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), ""))
+        if joueur != "pierre" and joueur != "feuille" and joueur != "ciseaux" { return some(discord_reponse_ephemere("Usage : `/pfc pierre`, `/pfc feuille` ou `/pfc ciseaux`.")) }
+        let tirage = fun_de_aleatoire(3)
+        var bot = "pierre"
+        if tirage == 2 { bot = "feuille" }
+        if tirage == 3 { bot = "ciseaux" }
+        var resultat = "Égalité 🤝"
+        if (joueur == "pierre" and bot == "ciseaux") or (joueur == "feuille" and bot == "pierre") or (joueur == "ciseaux" and bot == "feuille") { resultat = "Tu as gagné 🎉" }
+        if (joueur == "pierre" and bot == "feuille") or (joueur == "feuille" and bot == "ciseaux") or (joueur == "ciseaux" and bot == "pierre") { resultat = "J’ai gagné 🤖" }
+        return some(discord_reponse_message("✊ Toi : **" + joueur + "** — Moi : **" + bot + "**\n" + resultat))
+    }
+    if nom == "joke" {
+        let blagues = ["Pourquoi les développeurs confondent-ils Noël et Halloween ? Parce que DEC 25 = OCT 31.", "Un serveur Discord entre dans un bar. Le barman lui demande : quelle erreur ?", "Le bug a dit qu’il reviendrait, mais il n’a pas précisé dans quelle version."]
+        return some(discord_reponse_message("😄 " + get(blagues, fun_de_aleatoire(len(blagues)) - 1)))
+    }
+    if nom == "meme" {
+        let guild_meme = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        var total_memes = 0
+        var scan_memes = 1
+        while scan_memes <= 20 { if has(store_lire(guild_meme, "meme." + text(scan_memes))) { total_memes = total_memes + 1 }; scan_memes = scan_memes + 1 }
+        if total_memes > 0 {
+            var rang_meme = fun_de_aleatoire(total_memes)
+            var index_meme = 1
+            while index_meme <= 20 {
+                if has(store_lire(guild_meme, "meme." + text(index_meme))) { rang_meme = rang_meme - 1 }
+                if rang_meme == 0 { break }
+                index_meme = index_meme + 1
+            }
+            let choix_meme = store_lire(guild_meme, "meme." + text(index_meme))
+            return some(discord_reponse_message("😂 " + unwrap_or(choix_meme, "")))
+        }
+        let memes = ["Quand le bot passe tous les tests : **ça compile donc c’est prêt pour la production** 😎", "Moi : je fais une petite modification.\nLe projet : *ajoute 47 fichiers de configuration* 🫠", "Le serveur est en maintenance.\nLes membres : **c’est sûrement encore un bug** 🤖", "Quand personne ne lit la FAQ mais que tout le monde pose la même question 📚"]
+        return some(discord_reponse_message("😂 " + get(memes, fun_de_aleatoire(len(memes)) - 1)))
+    }
+    if nom == "meme_add" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let guild_meme = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let texte_meme = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        if texte_meme == "" or len(texte_meme) > 1800 { return some(discord_reponse_ephemere("❌ Le meme doit contenir entre 1 et 1800 caractères.")) }
+        var emplacement = 1
+        while emplacement <= 20 and has(store_lire(guild_meme, "meme." + text(emplacement))) { emplacement = emplacement + 1 }
+        if emplacement > 20 { return some(discord_reponse_ephemere("❌ La bibliothèque contient déjà 20 memes.")) }
+        if store_configurer(guild_meme, "meme." + text(emplacement), texte_meme) { return some(discord_reponse_message("✅ Meme personnalisé ajouté (#" + text(emplacement) + ").")) }
+        return some(discord_reponse_ephemere("❌ Impossible d’enregistrer le meme."))
+    }
+    if nom == "meme_remove" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let guild_meme = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let index_meme = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
+        if index_meme < 1 or index_meme > 20 or not store_supprimer(guild_meme, "meme." + text(index_meme)) { return some(discord_reponse_ephemere("❌ Meme introuvable.")) }
+        return some(discord_reponse_message("✅ Meme personnalisé supprimé."))
+    }
+    if nom == "meme_list" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let guild_meme = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        var liste_memes = ""
+        var index_liste = 1
+        while index_liste <= 20 {
+            let meme_lu = store_lire(guild_meme, "meme." + text(index_liste))
+            if has(meme_lu) { liste_memes += "#" + text(index_liste) + " — " + unwrap_or(meme_lu, "") + "\n" }
+            index_liste = index_liste + 1
+        }
+        if liste_memes == "" { return some(discord_reponse_ephemere("Aucun meme personnalisé.")) }
+        return some(discord_reponse_ephemere("😂 **Memes personnalisés**\n" + liste_memes))
+    }
+    if nom == "quote" {
+        let citations = ["La simplicité est la sophistication suprême.", "Le succès est la somme de petits efforts répétés.", "La meilleure façon de prédire l’avenir est de le créer."]
+        return some(discord_reponse_message("💬 « " + get(citations, fun_de_aleatoire(len(citations)) - 1) + " »"))
+    }
+    if nom == "riddle" {
+        let enigmes = ["Je suis plein de trous mais je retiens l’eau. Qui suis-je ?\n||Une éponge||", "Plus je sèche, plus je deviens mouillé. Qui suis-je ?\n||Une serviette||", "Je monte et je descends sans bouger. Qui suis-je ?\n||Un escalier||"]
+        return some(discord_reponse_message("🧩 " + get(enigmes, fun_de_aleatoire(len(enigmes)) - 1)))
+    }
+    if nom == "quiz" {
+        let questions = ["Quelle planète est surnommée la planète rouge ?\n||Mars||", "Combien de côtés possède un hexagone ?\n||6||", "Quel langage est utilisé par ce bot ?\n||Nolc||", "Quel est le symbole chimique de l’or ?\n||Au||", "Combien de bits y a-t-il dans un octet ?\n||8||"]
+        return some(discord_reponse_message("🧠 **Quiz**\n" + get(questions, fun_de_aleatoire(len(questions)) - 1)))
+    }
+    if nom == "challenge" {
+        let defis = ["Remercie publiquement un membre de la communauté.", "Partage une astuce utile sur le serveur.", "Aide un nouveau membre à trouver une information.", "Publie une photo de ton bureau ou de ton setup.", "Lance une partie avec un autre membre."]
+        let index_defi = (epoch_maintenant() / 86400) % len(defis)
+        return some(discord_reponse_message("🎯 **Défi du jour**\n" + get(defis, index_defi)))
+    }
+    if nom == "morpion" {
+        let action = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "jouer"))
+        let case_joueur = unwrap_or(json_chemin_int(req.corps, "data.options.1.value"), 0)
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+        if guild == "" or salon == "" { return some(discord_reponse_ephemere("Le morpion doit être joué sur un serveur.")) }
+        let cle = "game.morpion." + salon
+        if action == "nouveau" or action == "new" {
+            if store_configurer(guild, cle, ".........") { return some(discord_reponse_message("⭕ Nouvelle partie ! Tu joues ❌.\n" + fun_morpion_plateau("........."))) }
+            return some(discord_reponse_ephemere("❌ Impossible de créer la partie."))
+        }
+        var plateau = unwrap_or(store_lire(guild, cle), ".........")
+        if len(plateau) != 9 { plateau = "........." }
+        if fun_morpion_gagne(plateau, "X") or fun_morpion_gagne(plateau, "O") { return some(discord_reponse_ephemere("🏁 Cette partie est terminée. Lance `/morpion nouveau` pour recommencer.")) }
+        var cases_vides = 0
+        var case_scan = 0
+        while case_scan < 9 { if fun_morpion_case(plateau, case_scan) == "." { cases_vides = cases_vides + 1 }; case_scan = case_scan + 1 }
+        if cases_vides == 0 { return some(discord_reponse_ephemere("🤝 Cette partie est terminée sur une égalité. Lance `/morpion nouveau` pour recommencer.")) }
+        if case_joueur < 1 or case_joueur > 9 { return some(discord_reponse_ephemere("Usage : `/morpion jouer case` avec une case de 1 à 9. Lance `/morpion nouveau` pour commencer.")) }
+        let index = case_joueur - 1
+        if fun_morpion_case(plateau, index) != "." { return some(discord_reponse_ephemere("❌ Cette case est déjà occupée.")) }
+        plateau = sub(plateau, 0, index) + "X" + sub(plateau, index + 1, 8 - index)
+        if fun_morpion_gagne(plateau, "X") { let _save = store_configurer(guild, cle, plateau); return some(discord_reponse_message("🎉 Tu as gagné !\n" + fun_morpion_plateau(plateau))) }
+        var libres = 0
+        var i = 0
+        while i < 9 { if fun_morpion_case(plateau, i) == "." { libres = libres + 1 }; i = i + 1 }
+        if libres == 0 { let _save = store_configurer(guild, cle, plateau); return some(discord_reponse_message("🤝 Égalité !\n" + fun_morpion_plateau(plateau))) }
+        var bot_index = fun_de_aleatoire(9) - 1
+        var essais = 0
+        while fun_morpion_case(plateau, bot_index) != "." and essais < 9 { bot_index = (bot_index + 1) % 9; essais = essais + 1 }
+        plateau = sub(plateau, 0, bot_index) + "O" + sub(plateau, bot_index + 1, 8 - bot_index)
+        let _save = store_configurer(guild, cle, plateau)
+        if fun_morpion_gagne(plateau, "O") { return some(discord_reponse_message("🤖 J’ai gagné !\n" + fun_morpion_plateau(plateau))) }
+        return some(discord_reponse_message("🕹️ À toi !\n" + fun_morpion_plateau(plateau)))
+    }
+    if nom == "compatibility" {
+        let membre = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let autre = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        if membre == "" or autre == "" { return some(discord_reponse_ephemere("Usage : `/compatibility membre1 membre2`. ")) }
+        let score = fun_de_aleatoire(101)
+        return some(discord_reponse_message("💞 Compatibilité entre <@" + membre + "> et <@" + autre + "> : **" + text(score) + "%**"))
+    }
+    if nom == "choose" {
+        let options = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        if options == "" { return some(discord_reponse_ephemere("Usage : `/choose option 1|option 2|option 3`. ")) }
+        let choix = fun_choix_depuis_texte(options)
+        if choix == "" { return some(discord_reponse_ephemere("❌ Fournis au moins deux options séparées par `|`."))
+        }
+        return some(discord_reponse_message("🎯 Je choisis : **" + choix + "**"))
+    }
+    return none
+}

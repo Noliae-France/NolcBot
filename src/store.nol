@@ -1,0 +1,942 @@
+// Persistance SQLite du bot. Une ligne par serveur et clé de configuration.
+import "time.nol"
+opaque StoreDb
+opaque StoreStmt
+extern fn sqlite3_close(db: Ptr<StoreDb>) -> Int depuis "sqlite3.h"
+
+extern fn sqlite3_prepare_v2(db: Ptr<StoreDb>, sql: Text, n: Int, stmt: out Ptr<StoreStmt>, tail: Ptr) -> Int depuis "sqlite3.h"
+extern fn sqlite3_step(stmt: borrow Ptr<StoreStmt>) -> Int depuis "sqlite3.h"
+extern fn sqlite3_finalize(stmt: consume Ptr<StoreStmt>) -> Int depuis "sqlite3.h"
+extern fn sqlite3_column_text(stmt: borrow Ptr<StoreStmt>, col: Int) -> Text depuis "sqlite3.h"
+extern fn sqlite3_column_int64(stmt: borrow Ptr<StoreStmt>, col: Int) -> Int depuis "sqlite3.h"
+extern fn sqlite3_column_type(stmt: borrow Ptr<StoreStmt>, col: Int) -> Int depuis "sqlite3.h"
+
+extern fn sqlite3_open(chemin: Text, pdb: out Ptr<StoreDb>) -> Int depuis "sqlite3.h"
+extern fn sqlite3_exec(db: Ptr<StoreDb>, sql: Text, cb: Ptr, arg: Ptr, err: Ptr) -> Int depuis "sqlite3.h"
+extern fn sqlite3_changes(db: borrow Ptr<StoreDb>) -> Int depuis "sqlite3.h"
+
+fn store_chemin(chemin: Text) -> Text {
+    let configure = env("NOLIAE_DB_PATH")
+    if has(configure) and unwrap_or(configure, "") != "" { return unwrap_or(configure, chemin) }
+    return chemin
+}
+
+fn store_ouvrir(chemin: Text) -> Ptr<StoreDb> {
+    unsafe {
+        var db: Ptr<StoreDb> = ptr_null()
+        let rc = sqlite3_open(store_chemin(chemin), db)
+        if rc != 0 { return ptr_null() }
+        let schema = "CREATE TABLE IF NOT EXISTS guild_config (guild_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (guild_id, key)); CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, actor_id TEXT NOT NULL, action TEXT NOT NULL, target_id TEXT, reason TEXT, created_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, guild_id TEXT NOT NULL, user_id TEXT NOT NULL, channel_id TEXT NOT NULL, content TEXT NOT NULL, due_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS rss_subscriptions (guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, url TEXT NOT NULL, last_title TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL, PRIMARY KEY (guild_id, url)); CREATE TABLE IF NOT EXISTS twitch_subscriptions (guild_id TEXT NOT NULL, channel_id TEXT NOT NULL, username TEXT NOT NULL, last_live INTEGER NOT NULL DEFAULT -1, updated_at INTEGER NOT NULL, PRIMARY KEY (guild_id, username)); CREATE TABLE IF NOT EXISTS invite_cache (guild_id TEXT NOT NULL, code TEXT NOT NULL, uses INTEGER NOT NULL, inviter_id TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL, PRIMARY KEY (guild_id, code));"
+        if sqlite3_exec(db, schema, ptr_null(), ptr_null(), ptr_null()) != 0 {
+            let _c = sqlite3_close(db)
+            return ptr_null()
+        }
+        return db
+    }
+}
+
+fn store_initialiser(chemin: Text) -> Bool {
+    let db = store_ouvrir(chemin)
+    if ptr_est_nul(db) { return false }
+    unsafe { let _c = sqlite3_close(db) }
+    return true
+}
+
+fn store_integrite_ok() -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return false }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        if sqlite3_prepare_v2(db, "PRAGMA integrity_check;", -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return false }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return valeur == "ok"
+    }
+}
+
+fn store_sql_texte(valeur: Text) -> Text {
+    var out = ""
+    var i = 0
+    while i < len(valeur) {
+        let c = sub(valeur, i, 1)
+        if c == "'" { out = out + "''" } else { out = out + c }
+        i = i + 1
+    }
+    return out
+}
+
+fn store_lire(guild: Text, cle: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT value FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(cle) + "' LIMIT 1;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 {
+            let _c = sqlite3_close(db)
+            return none
+        }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne { return some(valeur) }
+        return none
+    }
+}
+
+fn store_lister_cles(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(key, ', ') FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key != 'verification.code' AND key NOT LIKE '_system%' AND key NOT LIKE 'privacy.suggestion.%' AND key NOT LIKE 'xp.user.%' AND key NOT LIKE 'xp.last.%' AND key NOT LIKE 'member.note.%' AND key NOT LIKE 'economy.balance.%' AND key NOT LIKE 'economy.daily.%' AND key NOT LIKE 'economy.weekly.%' AND key NOT LIKE 'economy.work.%' AND key NOT LIKE 'economy.inventory.%' AND key NOT LIKE 'music.votes.%' AND key NOT LIKE 'poll.%.vote.%' AND key NOT LIKE 'verification.pending.%';"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+// Liste bornée d’un sous-arbre de configuration sous la forme suffixe|valeur.
+// Utilisée par les files persistantes qui n’ont pas besoin d’une table dédiée.
+fn store_lister_prefixe(guild: Text, prefixe: Text, limite: Int) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or prefixe == "" or limite < 1 { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(substr(key," + text(len(prefixe) + 1) + ") || '|' || value, char(10)) FROM (SELECT key,value FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key LIKE '" + store_sql_texte(prefixe) + "%' ORDER BY key LIMIT " + text(limite) + ");"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_compter_cles_prefixe(guild: Text, prefixe: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or prefixe == "" { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT count(*) FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key LIKE '" + store_sql_texte(prefixe) + "%';"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return 0 }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_lister_faq(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(substr(key,5), char(10)) FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key LIKE 'faq.%' ORDER BY key;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_observer_invitation(guild: Text, code: Text, uses: Int, inviter: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or code == "" or uses < 0 { return -1 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT uses FROM invite_cache WHERE guild_id='" + store_sql_texte(guild) + "' AND code='" + store_sql_texte(code) + "' LIMIT 1;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return -1 }
+        let ligne = sqlite3_step(stmt) == 100
+        var ancien = -1
+        if ligne { ancien = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let sauvegarde = "INSERT OR REPLACE INTO invite_cache(guild_id,code,uses,inviter_id,updated_at) VALUES('" + store_sql_texte(guild) + "','" + store_sql_texte(code) + "'," + text(uses) + ",'" + store_sql_texte(inviter) + "',strftime('%s','now'));"
+        if sqlite3_exec(db, sauvegarde, ptr_null(), ptr_null(), ptr_null()) != 0 { let _c = sqlite3_close(db); return -1 }
+        let _c = sqlite3_close(db)
+        return ancien
+    }
+}
+
+fn store_classement_invitations(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(actor_id || '|' || total, char(10)) FROM (SELECT actor_id, count(*) AS total FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND action='invite_use' AND actor_id != '' GROUP BY actor_id ORDER BY total DESC, actor_id ASC LIMIT 20);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_lister_partenariats(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(id || '|' || target_id || '|' || reason, char(10)) FROM (SELECT id,target_id,reason FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND action='partnership_request' ORDER BY id DESC LIMIT 20);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_compter(guild: Text, prefixe: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT count(*) FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND action LIKE '" + store_sql_texte(prefixe) + "%';"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 {
+            let _c = sqlite3_close(db)
+            return 0
+        }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_somme_prefixe(guild: Text, prefixe: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT COALESCE(SUM(CAST(value AS INTEGER)),0) FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key LIKE '" + store_sql_texte(prefixe) + "%';"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return 0 }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_ajouter_temps_vocal(guild: Text, user: Text, secondes: Int) -> Bool {
+    if guild == "" or user == "" or secondes < 1 { return false }
+    let cle = "voice.seconds." + user
+    let actuel = unwrap_or(parse_int(unwrap_or(store_lire(guild, cle), "0")), 0)
+    return store_configurer(guild, cle, text(actuel + secondes))
+}
+
+fn store_compter_recent(guild: Text, action: Text, secondes: Int) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or secondes < 1 { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let depuis = epoch_maintenant() - secondes
+        let sql = "SELECT count(*) FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND action='" + store_sql_texte(action) + "' AND created_at >= " + text(depuis) + ";"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 {
+            let _c = sqlite3_close(db)
+            return 0
+        }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_compter_recent_prefixe(guild: Text, prefixe: Text, secondes: Int) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or secondes < 1 or prefixe == "" { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let depuis = epoch_maintenant() - secondes
+        let sql = "SELECT count(*) FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND action LIKE '" + store_sql_texte(prefixe) + "%' AND created_at >= " + text(depuis) + ";"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 {
+            let _c = sqlite3_close(db)
+            return 0
+        }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_compter_recent_acteur(guild: Text, actor: Text, action: Text, secondes: Int) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or secondes < 1 { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let depuis = epoch_maintenant() - secondes
+        let sql = "SELECT count(*) FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND actor_id='" + store_sql_texte(actor) + "' AND action='" + store_sql_texte(action) + "' AND created_at >= " + text(depuis) + ";"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return 0 }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_compter_cible(guild: Text, action: Text, cible: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT count(*) FROM audit_log a WHERE a.guild_id='" + store_sql_texte(guild) + "' AND a.action='" + store_sql_texte(action) + "' AND a.target_id='" + store_sql_texte(cible) + "' AND NOT EXISTS (SELECT 1 FROM audit_log r WHERE r.guild_id=a.guild_id AND r.action='sanction_revoke' AND r.target_id=CAST(a.id AS TEXT));"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return 0 }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_sauver(db: Ptr<StoreDb>, guild: Text, cle: Text, valeur: Text) -> Bool {
+    unsafe {
+        let sql = "INSERT INTO guild_config(guild_id,key,value,updated_at) VALUES('" + store_sql_texte(guild) + "','" + store_sql_texte(cle) + "','" + store_sql_texte(valeur) + "',strftime('%s','now')) ON CONFLICT(guild_id,key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at;"
+        return sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0
+    }
+}
+
+fn store_rss_abonner(guild: Text, channel: Text, url: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or channel == "" or url == "" { return false }
+    unsafe {
+        let sql = "BEGIN IMMEDIATE; INSERT OR REPLACE INTO rss_subscriptions(guild_id,channel_id,url,last_title,updated_at) VALUES('" + store_sql_texte(guild) + "','" + store_sql_texte(channel) + "','" + store_sql_texte(url) + "',COALESCE((SELECT last_title FROM rss_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "' AND url='" + store_sql_texte(url) + "'),''),strftime('%s','now')); COMMIT;"
+        let ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_rss_desabonner(guild: Text, url: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or url == "" { return false }
+    unsafe {
+        let ok = sqlite3_exec(db, "DELETE FROM rss_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "' AND url='" + store_sql_texte(url) + "';", ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_rss_compter(guild: Text, url_exclue: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT count(*) FROM rss_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "' AND url != '" + store_sql_texte(url_exclue) + "';"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return 0 }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_rss_du(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(channel_id || '|' || url || '|' || last_title, char(10)) FROM (SELECT channel_id,url,last_title FROM rss_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "' ORDER BY updated_at ASC LIMIT 10);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        // group_concat() renvoie une seule colonne contenant toutes les lignes.
+        // Lire les colonnes 1 et 2 ici provoquait des notifications RSS vides
+        // ou invalides selon le runtime SQLite utilisé.
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne { return some(valeur) }
+        return none
+    }
+}
+
+fn store_rss_prefixe(guild: Text, prefixe: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or prefixe == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(channel_id || '|' || url, char(10)) FROM (SELECT channel_id,url FROM rss_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "' AND url LIKE '" + store_sql_texte(prefixe) + "%' ORDER BY updated_at ASC LIMIT 20);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_rss_titre(guild: Text, url: Text, titre: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or url == "" { return false }
+    unsafe {
+        let sql = "UPDATE rss_subscriptions SET last_title='" + store_sql_texte(titre) + "',updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND url='" + store_sql_texte(url) + "';"
+        let ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_twitch_abonner(guild: Text, channel: Text, username: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or channel == "" or username == "" { return false }
+    unsafe {
+        let sql = "BEGIN IMMEDIATE; INSERT OR REPLACE INTO twitch_subscriptions(guild_id,channel_id,username,last_live,updated_at) VALUES('" + store_sql_texte(guild) + "','" + store_sql_texte(channel) + "','" + store_sql_texte(username) + "',-1,strftime('%s','now')); COMMIT;"
+        let ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_twitch_desabonner(guild: Text, username: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or username == "" { return false }
+    unsafe {
+        let ok = sqlite3_exec(db, "DELETE FROM twitch_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "' AND username='" + store_sql_texte(username) + "';", ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_twitch_compter(guild: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT count(*) FROM twitch_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "';"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return 0 }
+        let ligne = sqlite3_step(stmt) == 100
+        var total = 0
+        if ligne { total = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return total
+    }
+}
+
+fn store_twitch_du(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(channel_id || '|' || username || '|' || last_live, char(10)) FROM (SELECT channel_id,username,last_live FROM twitch_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "' ORDER BY updated_at ASC LIMIT 10);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_twitch_lister(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(channel_id || '|' || username || '|' || last_live, char(10)) FROM (SELECT channel_id,username,last_live FROM twitch_subscriptions WHERE guild_id='" + store_sql_texte(guild) + "' ORDER BY updated_at ASC LIMIT 20);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_twitch_etat(guild: Text, username: Text, live: Int) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or username == "" { return false }
+    unsafe {
+        let ok = sqlite3_exec(db, "UPDATE twitch_subscriptions SET last_live=" + text(live) + ",updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND username='" + store_sql_texte(username) + "';", ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_log(db: Ptr<StoreDb>, guild: Text, actor: Text, action: Text, target: Text, reason: Text) -> Bool {
+    unsafe {
+        let sql = "INSERT INTO audit_log(guild_id,actor_id,action,target_id,reason,created_at) VALUES('" + store_sql_texte(guild) + "','" + store_sql_texte(actor) + "','" + store_sql_texte(action) + "','" + store_sql_texte(target) + "','" + store_sql_texte(reason) + "',strftime('%s','now'));"
+        return sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0
+    }
+}
+
+fn store_log_action(guild: Text, actor: Text, action: Text, target: Text, reason: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return false }
+    let ok = store_log(db, guild, actor, action, target, reason)
+    unsafe { let _c = sqlite3_close(db) }
+    return ok
+}
+
+fn store_dernier_audit_id(guild: Text, actor: Text, action: Text, target: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT id FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND actor_id='" + store_sql_texte(actor) + "' AND action='" + store_sql_texte(action) + "' AND target_id='" + store_sql_texte(target) + "' ORDER BY id DESC LIMIT 1;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return 0 }
+        let ligne = sqlite3_step(stmt) == 100
+        var id = 0
+        if ligne { id = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return id
+    }
+}
+
+fn store_historique_sanctions(guild: Text, target: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or target == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(CAST(id AS TEXT) || ':' || action || ':' || reason, '|') FROM (SELECT id,action,reason FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND target_id='" + store_sql_texte(target) + "' AND (action='warn' OR action='ban' OR action='ban_temp' OR action='kick' OR action='mute' OR action='unmute' OR action='unban' OR action='auto_mute_warn_threshold') ORDER BY id DESC LIMIT 20);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = "" + sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_sanction_existe(guild: Text, identifiant: Int) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or identifiant < 1 { return false }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT count(*) FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND id=" + text(identifiant) + " AND (action='warn' OR action='ban' OR action='ban_temp' OR action='kick' OR action='mute' OR action='unmute' OR action='unban' OR action='auto_mute_warn_threshold');"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return false }
+        let ligne = sqlite3_step(stmt) == 100
+        var existe = false
+        if ligne { existe = sqlite3_column_int64(stmt, 0) > 0 }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return existe
+    }
+}
+
+fn store_audit_csv(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(CAST(id AS TEXT) || ',' || CAST(created_at AS TEXT) || ',' || actor_id || ',' || action || ',' || target_id || ',' || reason, char(10)) FROM (SELECT id,created_at,actor_id,action,target_id,reason FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' ORDER BY id DESC LIMIT 100);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some("id,timestamp,actor,action,target,reason\n" + valeur) }
+        return none
+    }
+}
+
+fn store_configurer(guild: Text, cle: Text, valeur: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return false }
+    let ok = store_sauver(db, guild, cle, valeur)
+    unsafe { let _c = sqlite3_close(db) }
+    return ok
+}
+
+fn store_ajouter_xp(guild: Text, user: Text, points: Int) -> Int {
+    if guild == "" or user == "" or points < 1 { return 0 }
+    let cle = "xp.user." + user
+    let actuel = unwrap_or(parse_int(unwrap_or(store_lire(guild, cle), "0")), 0)
+    let nouveau = actuel + points
+    if store_configurer(guild, cle, text(nouveau)) { return nouveau }
+    return actuel
+}
+
+fn store_solde(guild: Text, user: Text) -> Int {
+    return unwrap_or(parse_int(unwrap_or(store_lire(guild, "economy.balance." + user), "0")), 0)
+}
+
+fn store_reclamer_daily(guild: Text, user: Text, maintenant: Int) -> Int {
+    if guild == "" or user == "" or maintenant < 1 { return -1 }
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return -1 }
+    unsafe {
+        let balance = "economy.balance." + user
+        let quotidien = "economy.daily." + user
+        var ok = sqlite3_exec(db, "BEGIN IMMEDIATE;", ptr_null(), ptr_null(), ptr_null()) == 0
+        ok = ok and store_sauver(db, guild, balance, "0")
+        ok = ok and store_sauver(db, guild, quotidien, "0")
+        if ok {
+            let sql = "UPDATE guild_config SET value='" + text(maintenant) + "',updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(quotidien) + "' AND CAST(value AS INTEGER) <= " + text(maintenant - 86400) + ";"
+            ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        }
+        if ok {
+            let sql = "UPDATE guild_config SET value=CAST(value AS INTEGER)+100,updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(balance) + "';"
+            ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        }
+        if ok { ok = sqlite3_exec(db, "COMMIT;", ptr_null(), ptr_null(), ptr_null()) == 0 } else { let _rollback = sqlite3_exec(db, "ROLLBACK;", ptr_null(), ptr_null(), ptr_null()) }
+        let _c = sqlite3_close(db)
+        if ok { return store_solde(guild, user) }
+        return -1
+    }
+}
+
+fn store_reclamer_weekly(guild: Text, user: Text, maintenant: Int) -> Int {
+    if guild == "" or user == "" or maintenant < 1 { return -1 }
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return -1 }
+    unsafe {
+        let balance = "economy.balance." + user
+        let hebdo = "economy.weekly." + user
+        var ok = sqlite3_exec(db, "BEGIN IMMEDIATE;", ptr_null(), ptr_null(), ptr_null()) == 0
+        ok = ok and store_sauver(db, guild, balance, "0")
+        ok = ok and store_sauver(db, guild, hebdo, "0")
+        if ok {
+            let sql = "UPDATE guild_config SET value='" + text(maintenant) + "',updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(hebdo) + "' AND CAST(value AS INTEGER) <= " + text(maintenant - 604800) + ";"
+            ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        }
+        if ok {
+            let sql = "UPDATE guild_config SET value=CAST(value AS INTEGER)+500,updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(balance) + "';"
+            ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        }
+        if ok { ok = sqlite3_exec(db, "COMMIT;", ptr_null(), ptr_null(), ptr_null()) == 0 } else { let _rollback = sqlite3_exec(db, "ROLLBACK;", ptr_null(), ptr_null(), ptr_null()) }
+        let _c = sqlite3_close(db)
+        if ok { return store_solde(guild, user) }
+        return -1
+    }
+}
+
+fn store_reclamer_work(guild: Text, user: Text, maintenant: Int, recompense: Int) -> Int {
+    if guild == "" or user == "" or maintenant < 1 or recompense < 1 { return -1 }
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return -1 }
+    unsafe {
+        let balance = "economy.balance." + user
+        let travail = "economy.work." + user
+        var ok = sqlite3_exec(db, "BEGIN IMMEDIATE;", ptr_null(), ptr_null(), ptr_null()) == 0
+        ok = ok and store_sauver(db, guild, balance, "0")
+        ok = ok and store_sauver(db, guild, travail, "0")
+        if ok {
+            let sql = "UPDATE guild_config SET value='" + text(maintenant) + "',updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(travail) + "' AND CAST(value AS INTEGER) <= " + text(maintenant - 3600) + ";"
+            ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        }
+        if ok {
+            let sql = "UPDATE guild_config SET value=CAST(value AS INTEGER)+" + text(recompense) + ",updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(balance) + "';"
+            ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        }
+        if ok { ok = sqlite3_exec(db, "COMMIT;", ptr_null(), ptr_null(), ptr_null()) == 0 } else { let _rollback = sqlite3_exec(db, "ROLLBACK;", ptr_null(), ptr_null(), ptr_null()) }
+        let _c = sqlite3_close(db)
+        if ok { return store_solde(guild, user) }
+        return -1
+    }
+}
+
+fn store_acheter(guild: Text, user: Text, objet: Text, prix: Int, quantite: Int) -> Bool {
+    if guild == "" or user == "" or objet == "" or prix < 1 or quantite < 1 { return false }
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return false }
+    unsafe {
+        let solde = "economy.balance." + user
+        let inventaire = "economy.inventory." + user + "." + objet
+        let cout = prix * quantite
+        var ok = sqlite3_exec(db, "BEGIN IMMEDIATE;", ptr_null(), ptr_null(), ptr_null()) == 0
+        ok = ok and store_sauver(db, guild, solde, "0")
+        ok = ok and store_sauver(db, guild, inventaire, "0")
+        if ok {
+            let sql = "UPDATE guild_config SET value=CAST(value AS INTEGER)-" + text(cout) + ",updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(solde) + "' AND CAST(value AS INTEGER) >= " + text(cout) + ";"
+            ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        }
+        if ok {
+            let sql = "UPDATE guild_config SET value=CAST(value AS INTEGER)+" + text(quantite) + ",updated_at=strftime('%s','now') WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(inventaire) + "';"
+            ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        }
+        if ok { ok = sqlite3_exec(db, "COMMIT;", ptr_null(), ptr_null(), ptr_null()) == 0 } else { let _rollback = sqlite3_exec(db, "ROLLBACK;", ptr_null(), ptr_null(), ptr_null()) }
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_historique_economie(guild: Text, user: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or user == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(CAST(created_at AS TEXT) || ':' || action || ':' || target_id || ':' || reason, '|') FROM (SELECT created_at,action,target_id,reason FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND actor_id='" + store_sql_texte(user) + "' AND action LIKE 'economy_%' ORDER BY id DESC LIMIT 10);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_meilleur_solde(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let prefixe = "economy.balance."
+        let sql = "SELECT key,value FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key LIKE '" + prefixe + "%' ORDER BY CAST(value AS INTEGER) DESC LIMIT 1;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne { valeur = sub(sqlite3_column_text(stmt, 0), len(prefixe), len(sqlite3_column_text(stmt, 0)) - len(prefixe)) + "|" + sqlite3_column_text(stmt, 1) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne { return some(valeur) }
+        return none
+    }
+}
+
+fn store_meilleur_xp(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let prefixe = "xp.user."
+        let sql = "SELECT key,value FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key LIKE '" + prefixe + "%' ORDER BY CAST(value AS INTEGER) DESC LIMIT 1;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne { valeur = sub(sqlite3_column_text(stmt, 0), len(prefixe), len(sqlite3_column_text(stmt, 0)) - len(prefixe)) + "|" + sqlite3_column_text(stmt, 1) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne { return some(valeur) }
+        return none
+    }
+}
+
+fn store_classement_xp(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let prefixe = "xp.user."
+        let sql = "SELECT group_concat(substr(key," + text(len(prefixe) + 1) + ") || '|' || value, char(10)) FROM (SELECT key,value FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key LIKE '" + prefixe + "%' ORDER BY CAST(value AS INTEGER) DESC LIMIT 10);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_definir_solde(guild: Text, user: Text, montant: Int) -> Bool {
+    if guild == "" or user == "" or montant < 0 { return false }
+    return store_configurer(guild, "economy.balance." + user, text(montant))
+}
+
+fn store_ajouter_solde(guild: Text, user: Text, montant: Int) -> Int {
+    let actuel = store_solde(guild, user)
+    let nouveau = actuel + montant
+    if nouveau < 0 { return actuel }
+    if store_definir_solde(guild, user, nouveau) { return nouveau }
+    return actuel
+}
+
+fn store_transferer(guild: Text, source: Text, cible: Text, montant: Int) -> Bool {
+    if guild == "" or source == "" or cible == "" or source == cible or montant < 1 { return false }
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return false }
+    unsafe {
+        let g = store_sql_texte(guild)
+        let s = store_sql_texte(source)
+        let c = store_sql_texte(cible)
+        let cle_source = "economy.balance." + s
+        let cle_cible = "economy.balance." + c
+        var ok = sqlite3_exec(db, "BEGIN IMMEDIATE;", ptr_null(), ptr_null(), ptr_null()) == 0
+        ok = ok and sqlite3_exec(db, "INSERT OR IGNORE INTO guild_config(guild_id,key,value,updated_at) VALUES('" + g + "','" + cle_source + "','0',strftime('%s','now'));", ptr_null(), ptr_null(), ptr_null()) == 0
+        ok = ok and sqlite3_exec(db, "INSERT OR IGNORE INTO guild_config(guild_id,key,value,updated_at) VALUES('" + g + "','" + cle_cible + "','0',strftime('%s','now'));", ptr_null(), ptr_null(), ptr_null()) == 0
+        if ok { ok = sqlite3_exec(db, "UPDATE guild_config SET value=CAST(value AS INTEGER)-" + text(montant) + ",updated_at=strftime('%s','now') WHERE guild_id='" + g + "' AND key='" + cle_source + "' AND CAST(value AS INTEGER) >= " + text(montant) + ";", ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1 }
+        if ok { ok = sqlite3_exec(db, "UPDATE guild_config SET value=CAST(value AS INTEGER)+" + text(montant) + ",updated_at=strftime('%s','now') WHERE guild_id='" + g + "' AND key='" + cle_cible + "';", ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1 }
+        if ok { ok = sqlite3_exec(db, "COMMIT;", ptr_null(), ptr_null(), ptr_null()) == 0 } else { let _rollback = sqlite3_exec(db, "ROLLBACK;", ptr_null(), ptr_null(), ptr_null()) }
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_creer_rappel(guild: Text, user: Text, channel: Text, contenu: Text, echeance: Int) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or user == "" or channel == "" or contenu == "" or echeance < 1 { return false }
+    unsafe {
+        let sql = "INSERT INTO reminders(guild_id,user_id,channel_id,content,due_at) VALUES('" + store_sql_texte(guild) + "','" + store_sql_texte(user) + "','" + store_sql_texte(channel) + "','" + store_sql_texte(contenu) + "'," + text(echeance) + ");"
+        let ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_dernier_rappel(guild: Text, user: Text) -> Int {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or user == "" { return 0 }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT id FROM reminders WHERE guild_id='" + store_sql_texte(guild) + "' AND user_id='" + store_sql_texte(user) + "' ORDER BY id DESC LIMIT 1;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return 0 }
+        let ligne = sqlite3_step(stmt) == 100
+        var id = 0
+        if ligne { id = sqlite3_column_int64(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        return id
+    }
+}
+
+fn store_lister_rappels(guild: Text, user: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or user == "" { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(CAST(id AS TEXT) || ':' || CAST(due_at AS TEXT), ', ') FROM reminders WHERE guild_id='" + store_sql_texte(guild) + "' AND user_id='" + store_sql_texte(user) + "' ORDER BY due_at ASC;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_rappel_du(guild: Text) -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT id,user_id,channel_id,content FROM reminders WHERE guild_id='" + store_sql_texte(guild) + "' AND due_at <= " + text(epoch_maintenant()) + " ORDER BY due_at ASC LIMIT 1;"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne { valeur = text(sqlite3_column_int64(stmt, 0)) + "|" + sqlite3_column_text(stmt, 1) + "|" + sqlite3_column_text(stmt, 2) + "|" + sqlite3_column_text(stmt, 3) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne { return some(valeur) }
+        return none
+    }
+}
+
+fn store_lister_guildes() -> Option<Text> {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return none }
+    unsafe {
+        var stmt: Ptr<StoreStmt> = ptr_null()
+        let sql = "SELECT group_concat(guild_id, ',') FROM (SELECT guild_id FROM guild_config WHERE guild_id != '_system' UNION SELECT guild_id FROM reminders WHERE guild_id != '_system' UNION SELECT guild_id FROM rss_subscriptions WHERE guild_id != '_system' UNION SELECT guild_id FROM twitch_subscriptions WHERE guild_id != '_system' UNION SELECT guild_id FROM audit_log WHERE guild_id != '_system' ORDER BY guild_id);"
+        if sqlite3_prepare_v2(db, sql, -1, stmt, ptr_null()) != 0 { let _c = sqlite3_close(db); return none }
+        let ligne = sqlite3_step(stmt) == 100
+        var valeur = ""
+        if ligne and sqlite3_column_type(stmt, 0) != 5 { valeur = sqlite3_column_text(stmt, 0) }
+        let _f = sqlite3_finalize(stmt)
+        let _c = sqlite3_close(db)
+        if ligne and valeur != "" { return some(valeur) }
+        return none
+    }
+}
+
+fn store_supprimer_rappel(id: Int) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or id < 1 { return false }
+    unsafe {
+        let ok = sqlite3_exec(db, "DELETE FROM reminders WHERE id=" + text(id) + ";", ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_annuler_rappel(guild: Text, user: Text, id: Int) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) or guild == "" or user == "" or id < 1 { return false }
+    unsafe {
+        let sql = "DELETE FROM reminders WHERE id=" + text(id) + " AND guild_id='" + store_sql_texte(guild) + "' AND user_id='" + store_sql_texte(user) + "';"
+        let ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_changes(db) == 1
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_supprimer(guild: Text, cle: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return false }
+    unsafe {
+        let sql = "DELETE FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key='" + store_sql_texte(cle) + "';"
+        let ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+// Supprime un sous-arbre de configuration sans toucher aux autres clés du serveur.
+fn store_supprimer_prefixe(guild: Text, prefixe: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return false }
+    unsafe {
+        let sql = "DELETE FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND key LIKE '" + store_sql_texte(prefixe) + "%';"
+        let ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}
+
+fn store_supprimer_donnees(guild: Text, user: Text) -> Bool {
+    let db = store_ouvrir("noliae-discord.sqlite3")
+    if ptr_est_nul(db) { return false }
+    unsafe {
+        let sql = "DELETE FROM audit_log WHERE guild_id='" + store_sql_texte(guild) + "' AND (actor_id='" + store_sql_texte(user) + "' OR target_id='" + store_sql_texte(user) + "');"
+        let sql_xp = "DELETE FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND (key='xp.user." + store_sql_texte(user) + "' OR key='xp.last." + store_sql_texte(user) + "');"
+        let sql_economy = "DELETE FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND (key='economy.balance." + store_sql_texte(user) + "' OR key='economy.daily." + store_sql_texte(user) + "' OR key='economy.weekly." + store_sql_texte(user) + "' OR key='economy.work." + store_sql_texte(user) + "' OR key LIKE 'economy.inventory." + store_sql_texte(user) + ".%');"
+        let sql_personnel = "DELETE FROM guild_config WHERE guild_id='" + store_sql_texte(guild) + "' AND (key='voice.seconds." + store_sql_texte(user) + "' OR key='voice.started." + store_sql_texte(user) + "' OR key='member.note." + store_sql_texte(user) + "' OR key LIKE 'music.votes.%." + store_sql_texte(user) + "' OR key LIKE 'poll.%.vote." + store_sql_texte(user) + "' OR key='verification.pending." + store_sql_texte(user) + "' OR key LIKE 'privacy.suggestion.%.' || '" + store_sql_texte(user) + "');"
+        let sql_reminders = "DELETE FROM reminders WHERE guild_id='" + store_sql_texte(guild) + "' AND user_id='" + store_sql_texte(user) + "';"
+        let ok = sqlite3_exec(db, sql, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_exec(db, sql_xp, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_exec(db, sql_economy, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_exec(db, sql_personnel, ptr_null(), ptr_null(), ptr_null()) == 0 and sqlite3_exec(db, sql_reminders, ptr_null(), ptr_null(), ptr_null()) == 0
+        let _c = sqlite3_close(db)
+        return ok
+    }
+}

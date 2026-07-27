@@ -14,6 +14,8 @@
 import "ws_client.nol"
 import "../vendor/json.nol"
 
+extern fn usleep(microsecondes: Int) -> Int depuis "unistd.h"
+
 // État de connexion porté entre itérations. Le buffer est un champ Bytes :
 // chaque itération le renvoie recopié hors de sa région -> mémoire bornée.
 // (Un Fn ne peut PAS être un champ de record ; le handler est passé à part.)
@@ -109,6 +111,7 @@ fn gw_iteration(ssl: Ptr<TlsSession>, token: Text, intents: Int, on_event: Fn(Te
     if identifie and intervalle > 0 and maintenant - dernier_hb >= intervalle {
         let _h = tls_ecrire_bytes(ssl, ws_frame_client_texte(gw_heartbeat(seq)))
         dernier_hb = maintenant
+        let _tick = on_event("{\"t\":\"NOLIAE_TICK\",\"d\":{}}")
     }
     if maintenant - derniere_activite > 90000 {
         print("Gateway silencieuse > 90 s — arrêt.")
@@ -120,7 +123,7 @@ fn gw_iteration(ssl: Ptr<TlsSession>, token: Text, intents: Int, on_event: Fn(Te
 
 // Boucle Gateway complète : connexion WSS -> handshake -> HELLO/IDENTIFY ->
 // heartbeat + événements (chaque dispatch passé à `on_event`), jusqu'à fermeture.
-fn gateway_run(token: Text, intents: Int, on_event: Fn(Text) -> Bool) {
+fn gateway_run_session(token: Text, intents: Int, on_event: Fn(Text) -> Bool) {
     let fdo = tcp_connect("gateway.discord.gg", 443)
     if not has(fdo) {
         print("Connexion TCP à gateway.discord.gg impossible.")
@@ -172,4 +175,14 @@ fn gateway_run(token: Text, intents: Int, on_event: Fn(Text) -> Bool) {
     tls_fermer(ssl)
     tcp_close(fd)
     print("Gateway fermée.")
+}
+
+fn gateway_run(token: Text, intents: Int, on_event: Fn(Text) -> Bool) {
+    var delai = 1000000
+    while true {
+        gateway_run_session(token, intents, on_event)
+        print("Gateway déconnectée ; reconnexion dans " + text(delai / 1000000) + " s.")
+        let _pause = usleep(delai)
+        if delai < 30000000 { delai = delai * 2 }
+    }
 }

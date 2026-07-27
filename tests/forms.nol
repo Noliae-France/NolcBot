@@ -1,0 +1,18 @@
+import "../src/commands/forms.nol"
+
+fn test_identifiants_formulaire() {
+    assert(formulaire_nom_valide("candidature_2026"), "identifiant simple accepté")
+    assert(not formulaire_nom_valide(""), "identifiant vide refusé")
+    assert(not formulaire_nom_valide("form:interne"), "séparateur de modal refusé")
+    assert(not formulaire_nom_valide("form|interne"), "séparateur de stockage refusé")
+}
+
+fn test_modal_discord() {
+    let reponse = formulaire_reponse_modal("form:candidature", "Candidature", "Pourquoi nous rejoindre ?")
+    assert(reponse.statut == 200, "réponse HTTP Discord valide")
+    assert(contains(reponse.corps, "\"type\":9"), "réponse modal Discord")
+    assert(contains(reponse.corps, "form:candidature"), "identifiant modal transmis")
+    assert(contains(reponse.corps, "Pourquoi nous rejoindre ?"), "champ modal transmis")
+}
+
+fn main() {}

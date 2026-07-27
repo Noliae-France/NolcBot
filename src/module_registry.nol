@@ -1,0 +1,23 @@
+import "nolc-discord::src/lib.nol"
+import "store.nol"
+
+fn module_commande(nom: Text) -> Text {
+    if nom == "verify" { return "security" }
+    if nom == "ban" or nom == "unban" or nom == "kick" or nom == "mute" or nom == "unmute" or nom == "warn" or nom == "warnings" or nom == "sanctions" or nom == "sanction_revoke" or nom == "clear" or nom == "slowmode" or nom == "lock" or nom == "unlock" or nom == "nickname" or nom == "role_temp" { return "moderation" }
+    if nom == "announce" or nom == "announce_schedule" or nom == "ticket" or nom == "ticket_close" or nom == "ticket_add" or nom == "ticket_remove" or nom == "ticket_claim" or nom == "ticket_unclaim" or nom == "ticket_transcript" or nom == "ticket_priority" or nom == "poll" or nom == "poll_vote" or nom == "poll_close" or nom == "report" or nom == "suggest" or nom == "suggest_status" or nom == "partnership" { return "community" }
+    if nom == "quiz" or nom == "challenge" or nom == "morpion" or nom == "choose" or nom == "meme" or nom == "profile" or nom == "achievements" or nom == "xp_leaderboard" or nom == "xp_reset" { return "fun" }
+    if nom == "voice" or nom == "music" { return "voice" }
+    if nom == "stats" or nom == "stats_report" or nom == "stats_csv" { return "stats" }
+    if nom == "daily" or nom == "weekly" or nom == "balance" or nom == "work" or nom == "shop" or nom == "buy" or nom == "inventory" or nom == "give" or nom == "transactions" { return "economy" }
+    if nom == "ai" or nom == "summarize" or nom == "rewrite" or nom == "ideas" or nom == "faq_ai" { return "ai" }
+    if nom == "rss" or nom == "rss_subscribe" or nom == "rss_unsubscribe" or nom == "calendar" or nom == "calendar_subscribe" or nom == "calendar_unsubscribe" or nom == "youtube_subscribe" or nom == "youtube_list" or nom == "github_subscribe" or nom == "reddit_subscribe" or nom == "twitch_status" or nom == "twitch_subscribe" or nom == "twitch_unsubscribe" or nom == "twitch_list" { return "integrations" }
+    return ""
+}
+
+fn module_desactive(corps: Text, nom: Text) -> Bool {
+    let module = module_commande(nom)
+    if module == "" { return false }
+    let guild = unwrap_or(json_chemin_texte(corps, "guild_id"), "")
+    let actif = store_lire(guild, "module." + module + ".enabled")
+    return has(actif) and (unwrap_or(actif, "") == "false" or unwrap_or(actif, "") == "0" or unwrap_or(actif, "") == "off")
+}

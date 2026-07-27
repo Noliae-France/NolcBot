@@ -1,23 +1,19 @@
-name: build
+name: build-noliae-discord
 
-# Build direct sur le runner self-hosted DÉDIÉ Noliae `nolc-public` (nolc +
-# libsodium/OpenSSL bakés dans l'image maison). Compile et exécute le selftest.
 on:
   push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:
 
 jobs:
-  selftest:
-    runs-on: [self-hosted, nolc-public]
+  build:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Version de nolc (baké dans le runner)
-        run: nolc --version
-
-      - name: Build + exécution du selftest
+      - name: Installer les dépendances système
+        run: sudo apt-get update && sudo apt-get install -y libsodium-dev libssl-dev libsqlite3-dev sqlite3
+      - name: Installer Nolc
         run: |
-          nolc build examples/selftest.nol -o selftest --lien sodium --lien ssl --lien crypto
-          ./selftest
+          curl -fsSL https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-linux-x86_64.tar.gz | tar -xz
+          find . -type f -name nolc -exec sudo install -m 0755 {} /usr/local/bin/nolc \;
+      - name: Vérifier, tester et compiler
+        run: ./check.sh

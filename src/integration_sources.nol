@@ -1,0 +1,79 @@
+import "nolc-discord::src/lib.nol"
+import "integration_policy.nol"
+
+fn integration_identifiant_simple(valeur: Text, maximum: Int) -> Bool {
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+    if valeur == "" or len(valeur) > maximum { return false }
+    var i = 0
+    while i < len(valeur) {
+        if not contains(alphabet, sub(valeur, i, 1)) { return false }
+        i = i + 1
+    }
+    return true
+}
+
+fn integration_flux_youtube(channel_id: Text) -> Option<Text> {
+    if not starts_with(channel_id, "UC") or not integration_identifiant_simple(channel_id, 64) { return none }
+    let url = "https://www.youtube.com/feeds/videos.xml?channel_id=" + channel_id
+    if integration_url_autorisee(url) { return some(url) }
+    return none
+}
+
+fn integration_est_flux_youtube(url: Text) -> Bool {
+    return starts_with(url, "https://www.youtube.com/feeds/videos.xml?channel_id=")
+}
+
+fn integration_youtube_channel_depuis_flux(url: Text) -> Text {
+    let prefixe = "https://www.youtube.com/feeds/videos.xml?channel_id="
+    if not starts_with(url, prefixe) { return "" }
+    return sub(url, len(prefixe), len(url) - len(prefixe))
+}
+
+fn integration_youtube_lien_channel(channel_id: Text) -> Text {
+    if channel_id == "" { return "https://www.youtube.com/" }
+    return "https://www.youtube.com/channel/" + channel_id
+}
+
+fn integration_flux_github(depot: Text) -> Option<Text> {
+    let separateur = find(depot, "/")
+    if not has(separateur) { return none }
+    let i = unwrap_or(separateur, 0)
+    if i < 1 or i >= len(depot) - 1 { return none }
+    let organisation = sub(depot, 0, i)
+    let projet = sub(depot, i + 1, len(depot) - i - 1)
+    if not integration_identifiant_simple(organisation, 64) or not integration_identifiant_simple(projet, 100) { return none }
+    let url = "https://github.com/" + organisation + "/" + projet + ".atom"
+    if integration_url_autorisee(url) { return some(url) }
+    return none
+}
+
+fn integration_flux_reddit(subreddit: Text) -> Option<Text> {
+    if not integration_identifiant_simple(subreddit, 64) { return none }
+    let url = "https://www.reddit.com/r/" + subreddit + "/new/.rss"
+    if integration_url_autorisee(url) { return some(url) }
+    return none
+}
+
+fn integration_rss_titre_normaliser(texte: Text) -> Text {
+    var resultat = texte
+    var position = find(resultat, "|")
+    while has(position) {
+        let i = unwrap_or(position, 0)
+        resultat = sub(resultat, 0, i) + "-" + sub(resultat, i + 1, len(resultat) - i - 1)
+        position = find(resultat, "|")
+    }
+    position = find(resultat, "\n")
+    while has(position) {
+        let i = unwrap_or(position, 0)
+        resultat = sub(resultat, 0, i) + " " + sub(resultat, i + 1, len(resultat) - i - 1)
+        position = find(resultat, "\n")
+    }
+    position = find(resultat, "\r")
+    while has(position) {
+        let i = unwrap_or(position, 0)
+        resultat = sub(resultat, 0, i) + " " + sub(resultat, i + 1, len(resultat) - i - 1)
+        position = find(resultat, "\r")
+    }
+    if len(resultat) > 300 { resultat = sub(resultat, 0, 300) }
+    return resultat
+}

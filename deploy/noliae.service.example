@@ -1,0 +1,32 @@
+[Unit]
+Description=Noliae Discord Bot (Nolc)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=noliae
+Group=noliae
+WorkingDirectory=/var/lib/noliae-discord
+EnvironmentFile=/etc/noliae-discord/bot.env
+ExecStart=/opt/noliae-discord/bot
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/noliae-discord
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

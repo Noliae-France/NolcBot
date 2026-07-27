@@ -1,0 +1,117 @@
+// ACL par rôles Discord. Les associations persistantes sont enregistrées
+// dans SQLite par /groupe et /permission; les variables d’environnement
+// fournissent uniquement un mode de démarrage minimal.
+import "nolc-discord::src/lib.nol"
+import "store.nol"
+
+fn liste_ids_contient(liste: Text, identifiant: Text) -> Bool {
+    if liste == "" or identifiant == "" { return false }
+    return contains("," + liste + ",", "," + identifiant + ",")
+}
+
+fn role_discord_present(corps: Text, role_id: Text) -> Bool {
+    if role_id == "" { return false }
+    var index = 0
+    while index < 64 {
+        let role = json_chemin_texte(corps, "member.roles." + text(index))
+        if has(role) and unwrap_or(role, "") == role_id { return true }
+        index = index + 1
+    }
+    return false
+}
+
+fn acl_groupe_verifie(corps: Text, guild: Text, groupe: Text, permission: Text) -> Bool {
+    let active = store_lire(guild, "acl.group." + groupe + ".permission." + permission)
+    let role = store_lire(guild, "acl.group." + groupe + ".role")
+    return has(active) and has(role) and role_discord_present(corps, unwrap_or(role, ""))
+}
+
+fn acl_autorise(corps: Text, permission: Text) -> Bool {
+    // Le propriétaire du serveur reste toujours autorisé.
+    let owner = json_chemin_texte(corps, "guild_owner_id")
+    let user = json_chemin_texte(corps, "member.user.id")
+    if has(owner) and has(user) and unwrap_or(owner, "") == unwrap_or(user, "") { return true }
+
+    let guild = unwrap_or(json_chemin_texte(corps, "guild_id"), "")
+    let groupes = store_lire(guild, "acl.permission." + permission + ".groups")
+    if has(groupes) {
+        var reste_groupes = unwrap_or(groupes, "")
+        while reste_groupes != "" {
+            let separateur = find(reste_groupes, ",")
+            var nom_groupe = reste_groupes
+            if has(separateur) { nom_groupe = sub(reste_groupes, 0, unwrap_or(separateur, 0)) }
+            if acl_groupe_verifie(corps, guild, nom_groupe, permission) { return true }
+            if not has(separateur) { break }
+            let suite = unwrap_or(separateur, 0) + 1
+            reste_groupes = sub(reste_groupes, suite, len(reste_groupes) - suite)
+        }
+    }
+    // Compatibilité avec les installations qui utilisaient un seul groupe.
+    let groupe_ancien = store_lire(guild, "acl.permission." + permission + ".group")
+    if has(groupe_ancien) and acl_groupe_verifie(corps, guild, unwrap_or(groupe_ancien, ""), permission) {
+        return true
+    }
+
+    // Configuration temporaire lisible par l'environnement : un rôle réel
+    // par groupe. La persistance interactive remplacera ce mécanisme.
+    var role: Option<Text> = store_lire(guild, "acl.role." + permission)
+    if not has(role) { return false }
+    let role_id = unwrap_or(role, "")
+    return role_discord_present(corps, role_id)
+}
+
+fn acl_refus(permission: Text) -> Reponse {
+    return discord_reponse_ephemere("⛔ Permission manquante : `" + permission + "`.")
+}
+
+fn acl_serveur_bloque(corps: Text) -> Bool {
+    let a = json_chemin_texte(corps, "guild_id")
+    let b = json_chemin_texte(corps, "d.guild_id")
+    var guild = unwrap_or(a, "")
+    if guild == "" { guild = unwrap_or(b, "") }
+    let liste = store_lire(guild, "security.blacklist")
+    let blanche = store_lire(guild, "security.whitelist")
+    if has(blanche) and liste_ids_contient(unwrap_or(blanche, ""), guild) { return false }
+    if not has(liste) or guild == "" { return false }
+    return liste_ids_contient(unwrap_or(liste, ""), guild)
+}
+
+fn acl_utilisateur_bloque(corps: Text) -> Bool {
+    let guild = unwrap_or(json_chemin_texte(corps, "guild_id"), "")
+    let liste = store_lire(guild, "security.blacklist_users")
+    if not has(liste) { return false }
+    let a = json_chemin_texte(corps, "member.user.id")
+    let b = json_chemin_texte(corps, "d.author.id")
+    let c = json_chemin_texte(corps, "d.user.id")
+    let ids = unwrap_or(liste, "")
+    let blanche = store_lire(guild, "security.whitelist_users")
+    if has(a) and has(blanche) and liste_ids_contient(unwrap_or(blanche, ""), unwrap_or(a, "")) { return false }
+    if has(b) and has(blanche) and liste_ids_contient(unwrap_or(blanche, ""), unwrap_or(b, "")) { return false }
+    if has(c) and has(blanche) and liste_ids_contient(unwrap_or(blanche, ""), unwrap_or(c, "")) { return false }
+    if has(a) and liste_ids_contient(ids, unwrap_or(a, "")) { return true }
+    if has(b) and liste_ids_contient(ids, unwrap_or(b, "")) { return true }
+    if has(c) and liste_ids_contient(ids, unwrap_or(c, "")) { return true }
+    return false
+}
+
+fn acl_refus_utilisateur() -> Reponse {
+    return discord_reponse_ephemere("⛔ Ton compte n’est pas autorisé à utiliser ce bot.")
+}
+
+fn acl_refus_serveur() -> Reponse {
+    return discord_reponse_ephemere("⛔ Ce serveur n’est pas autorisé à utiliser ce bot.")
+}
+
+fn acl_maintenance() -> Bool {
+    return false
+}
+
+fn acl_maintenance_serveur(corps: Text) -> Bool {
+    let guild = unwrap_or(json_chemin_texte(corps, "guild_id"), "")
+    let mode = store_lire(guild, "maintenance")
+    return has(mode) and (unwrap_or(mode, "") == "true" or unwrap_or(mode, "") == "1")
+}
+
+fn acl_admin(corps: Text) -> Bool {
+    return acl_autorise(corps, "admin")
+}

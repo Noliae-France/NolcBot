@@ -1,0 +1,41 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../discord_api.nol"
+import "../integrations.nol"
+import "../store.nol"
+
+fn commande_ai_admin(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom != "ai_admin_plan" and nom != "ai_admin_confirm" { return none }
+    if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+    let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+    let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+    if nom == "ai_admin_plan" {
+        let demande = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let plan = integration_ai(guild, "Réponds uniquement avec des lignes CATEGORY|nom, ROLE|nom ou CHANNEL|nom, maximum 10 lignes, sans permissions admin. Demande : " + demande)
+        if not has(plan) { return some(discord_reponse_ephemere("❌ IA indisponible.")) }
+        let brut = unwrap_or(plan, "")
+        if not store_configurer(guild, "ai.admin.plan." + user, brut) { return some(discord_reponse_ephemere("❌ Plan non enregistré.")) }
+        let _audit = store_log_action(guild, user, "ai_admin_plan", "", demande)
+        return some(discord_reponse_ephemere("Plan proposé :\n```\n" + brut + "\n```\nConfirme avec `/ai_admin_confirm`."))
+    }
+    let plan = store_lire(guild, "ai.admin.plan." + user)
+    if not has(plan) { return some(discord_reponse_ephemere("❌ Aucun plan en attente.")) }
+    let token = bot_token()
+    if not has(token) { return some(discord_reponse_ephemere("❌ Token indisponible.")) }
+    var reste = unwrap_or(plan, "")
+    var ok = 0
+    while reste != "" {
+        let fin = find(reste, "\n")
+        var ligne = reste
+        if has(fin) { ligne = sub(reste, 0, unwrap_or(fin, 0)) }
+        if starts_with(ligne, "ROLE|") and has(discord_creer_role(unwrap_or(token, ""), guild, sub(ligne, 5, len(ligne) - 5))) { ok = ok + 1 }
+        if starts_with(ligne, "CATEGORY|") and has(discord_creer_categorie(unwrap_or(token, ""), guild, sub(ligne, 9, len(ligne) - 9))) { ok = ok + 1 }
+        if starts_with(ligne, "CHANNEL|") and has(discord_creer_salon_texte(unwrap_or(token, ""), guild, sub(ligne, 8, len(ligne) - 8), "")) { ok = ok + 1 }
+        if not has(fin) { break }
+        let d = unwrap_or(fin, 0) + 1
+        reste = sub(reste, d, len(reste) - d)
+    }
+    let _clear = store_supprimer(guild, "ai.admin.plan." + user)
+    let _audit = store_log_action(guild, user, "ai_admin_confirm", "", text(ok) + " actions")
+    return some(discord_reponse_ephemere("✅ Plan exécuté : " + text(ok) + " action(s) créée(s)."))
+}

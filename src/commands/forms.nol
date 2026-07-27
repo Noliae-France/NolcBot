@@ -1,0 +1,49 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../discord_api.nol"
+import "../store.nol"
+
+fn formulaire_nom_valide(nom: Text) -> Bool {
+    return nom != "" and len(nom) <= 48 and not has(find(nom, "|")) and not has(find(nom, ":"))
+}
+
+fn formulaire_reponse_modal(custom_id: Text, titre: Text, etiquette: Text) -> Reponse {
+    let champ = "{\"type\":1,\"components\":[{\"type\":4,\"custom_id\":\"reponse\",\"label\":" + json_texte(etiquette) + ",\"style\":2,\"min_length\":1,\"max_length\":1000,\"required\":true}]}"
+    return reponse_json("{\"type\":9,\"data\":{\"custom_id\":" + json_texte(custom_id) + ",\"title\":" + json_texte(titre) + ",\"components\":[" + champ + "]}}")
+}
+
+fn commande_formulaires(req: Requete, nom: Text) -> Option<Reponse> {
+    let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+    let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+    if nom == "form_create" {
+        if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+        let identifiant = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), ""))
+        let titre = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let question = unwrap_or(json_chemin_texte(req.corps, "data.options.2.value"), "")
+        let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+        if not formulaire_nom_valide(identifiant) or titre == "" or question == "" or len(titre) > 45 or len(question) > 45 { return some(discord_reponse_ephemere("Usage : `/form_create nom titre question` (nom ≤ 48, titre/question ≤ 45).")) }
+        if store_configurer(guild, "form." + identifiant + ".title", titre) and store_configurer(guild, "form." + identifiant + ".label", question) and store_configurer(guild, "form." + identifiant + ".channel", salon) {
+            let _audit = store_log_action(guild, user, "form_create", identifiant, titre)
+            return some(discord_reponse_ephemere("✅ Formulaire `" + identifiant + "` enregistré. Utilise `/form_open " + identifiant + "`."))
+        }
+        return some(discord_reponse_ephemere("❌ Impossible d’enregistrer le formulaire."))
+    }
+    if nom == "form_open" {
+        let identifiant = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), ""))
+        let titre = store_lire(guild, "form." + identifiant + ".title")
+        let etiquette = store_lire(guild, "form." + identifiant + ".label")
+        if not has(titre) or not has(etiquette) { return some(discord_reponse_ephemere("❌ Formulaire introuvable.")) }
+        return some(formulaire_reponse_modal("form:" + identifiant, unwrap_or(titre, "Formulaire"), unwrap_or(etiquette, "Réponse")))
+    }
+    if starts_with(nom, "form:") {
+        let identifiant = sub(nom, 5, len(nom) - 5)
+        let destination = store_lire(guild, "form." + identifiant + ".channel")
+        let reponse = unwrap_or(json_chemin_texte(req.corps, "data.components.0.components.0.value"), "")
+        if not has(destination) or reponse == "" { return some(discord_reponse_ephemere("❌ Formulaire invalide ou expiré.")) }
+        let token = bot_token()
+        if not has(token) or not discord_envoie_message(unwrap_or(token, ""), unwrap_or(destination, ""), "📝 **Formulaire `" + identifiant + "`**\nAuteur : <@" + user + ">\n" + reponse) { return some(discord_reponse_ephemere("❌ Impossible d’envoyer la réponse.")) }
+        let _audit = store_log_action(guild, user, "form_submit", identifiant, "Réponse envoyée")
+        return some(discord_reponse_ephemere("✅ Réponse envoyée."))
+    }
+    return none
+}

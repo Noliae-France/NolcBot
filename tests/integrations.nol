@@ -1,0 +1,33 @@
+import "../src/integration_policy.nol"
+import "../src/integration_sources.nol"
+
+fn test_urls_refusees_avant_reseau() {
+    assert(not integration_url_autorisee("http://example.com/"), "HTTP refusé")
+    assert(not integration_url_autorisee("https://localhost/"), "localhost refusé")
+    assert(not integration_url_autorisee("https://127.0.0.1/"), "loopback refusé")
+    assert(not integration_url_autorisee("https://192.168.1.2/"), "réseau privé refusé")
+    assert(not integration_url_autorisee("https://"), "URL trop courte refusée")
+    assert(not integration_url_autorisee("https://user:pass@example.com/"), "identifiants URL refusés")
+    assert(integration_url_autorisee("https://calendar.example.com/public.ics"), "calendrier HTTPS public accepté")
+}
+
+fn test_titre_rss_sans_separateurs() {
+    let titre = integration_rss_titre_normaliser("Annonce | importante\nSuite")
+    assert(not contains(titre, "|"), "séparateur RSS neutralisé")
+    assert(not contains(titre, "\n"), "retour ligne RSS neutralisé")
+    assert(len(titre) <= 300, "titre RSS borné")
+}
+
+fn test_flux_fournisseurs() {
+    let youtube = integration_flux_youtube("UC123_test")
+    assert(has(youtube), "flux YouTube valide")
+    assert(not has(integration_flux_youtube("http://evil")), "identifiant YouTube invalide")
+    let github = integration_flux_github("Noliae-France/noliae-discord")
+    assert(has(github), "flux GitHub valide")
+    assert(not has(integration_flux_github("Noliae-France/depôt")), "dépôt GitHub invalide")
+    let reddit = integration_flux_reddit("discordapp")
+    assert(has(reddit), "flux Reddit valide")
+    assert(not integration_identifiant_simple("nom invalide!", 64), "chaîne Twitch invalide")
+}
+
+fn main() {}

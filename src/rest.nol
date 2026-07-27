@@ -3,10 +3,12 @@
 // permet pas. Sert à enregistrer les slash-commands (PUT .../commands).
 //
 // Compilation : --lien ssl --lien crypto (+ chemins OpenSSL).
+extern fn usleep(microsecondes: Int) -> Int depuis "unistd.h"
 
 // Poste un message dans un salon (utilisé par le mode Gateway pour répondre
 // aux messages non-slash). true si Discord accepte (200/201).
 fn discord_envoie_message(token: Text, salon: Text, contenu: Text) -> Bool {
+    if token == "" or salon == "" or contenu == "" or len(contenu) > 2000 { return false }
     let corps = "{\"content\":" + json_texte(contenu) + "}"
     let ro = discord_rest("POST", "/api/v10/channels/" + salon + "/messages", token, corps)
     if not has(ro) {
@@ -17,7 +19,7 @@ fn discord_envoie_message(token: Text, salon: Text, contenu: Text) -> Bool {
 }
 
 // Envoie une requête HTTPS à discord.com et renvoie la réponse HTTP brute.
-fn discord_rest(methode: Text, chemin: Text, token: Text, corps: Text) -> Option<Text> {
+fn discord_rest_tenter(methode: Text, chemin: Text, token: Text, corps: Text) -> Option<Text> {
     let fdo = tcp_connect("discord.com", 443)
     if not has(fdo) {
         return none
@@ -59,6 +61,35 @@ fn discord_rest(methode: Text, chemin: Text, token: Text, corps: Text) -> Option
     tls_fermer(ssl)
     tcp_close(fd)
     return some(rep)
+}
+
+// Réessaie uniquement les erreurs de transport; une réponse HTTP, même en
+// erreur applicative, n'est jamais rejouée afin d'éviter les doubles actions.
+fn discord_rest(methode: Text, chemin: Text, token: Text, corps: Text) -> Option<Text> {
+    let premier = discord_rest_tenter(methode, chemin, token, corps)
+    if has(premier) {
+        let reponse = unwrap_or(premier, "")
+        if http_statut(reponse) == 429 {
+            // Discord fournit Retry-After en secondes. Une seule reprise,
+            // bornée à 10 s, évite de bloquer le Gateway indéfiniment.
+            let marqueur = find(reponse, "Retry-After:")
+            var delai = 1
+            if has(marqueur) {
+                let debut = unwrap_or(marqueur, 0) + 12
+                let ligne = find(sub(reponse, debut, len(reponse) - debut), "\r\n")
+                var brut = sub(reponse, debut, len(reponse) - debut)
+                if has(ligne) { brut = sub(brut, 0, unwrap_or(ligne, 0)) }
+                let parse = parse_int(trim(brut))
+                if has(parse) { delai = unwrap_or(parse, 1) }
+            }
+            if delai < 1 { delai = 1 }
+            if delai > 10 { delai = 10 }
+            let _pause = usleep(delai * 1000000)
+            return discord_rest_tenter(methode, chemin, token, corps)
+        }
+        return premier
+    }
+    return discord_rest_tenter(methode, chemin, token, corps)
 }
 
 // Code de statut d'une réponse HTTP brute (« HTTP/1.1 200 OK »). -1 si illisible.

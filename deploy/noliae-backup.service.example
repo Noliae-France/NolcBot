@@ -1,0 +1,25 @@
+[Unit]
+Description=Sauvegarde SQLite Noliae Discord
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=noliae
+Group=noliae
+WorkingDirectory=/var/lib/noliae-discord
+EnvironmentFile=/etc/noliae-discord/bot.env
+Environment=NOLIAE_BACKUP_DIR=/var/backups/noliae-discord
+ExecStart=/opt/noliae-discord/backup.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX
+ReadOnlyPaths=/var/lib/noliae-discord
+ReadWritePaths=/var/backups/noliae-discord
+CapabilityBoundingSet=

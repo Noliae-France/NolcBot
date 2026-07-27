@@ -1,0 +1,136 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../discord_api.nol"
+import "../integrations.nol"
+import "../store.nol"
+
+fn ai_mod_action_valide(ligne: Text) -> Bool {
+    if starts_with(ligne, "NONE|") { return true }
+    if starts_with(ligne, "WARN|") { return true }
+    if starts_with(ligne, "MUTE|") { return true }
+    if starts_with(ligne, "KICK|") { return true }
+    if starts_with(ligne, "BAN|") { return true }
+    return false
+}
+
+fn ai_mod_resume_ligne(ligne: Text) -> Text {
+    if starts_with(ligne, "NONE|") { return "Aucune sanction automatique : " + sub(ligne, 5, len(ligne) - 5) }
+    if starts_with(ligne, "WARN|") { return "Avertissement proposé : " + sub(ligne, 5, len(ligne) - 5) }
+    if starts_with(ligne, "MUTE|") { return "Timeout proposé : " + sub(ligne, 5, len(ligne) - 5) }
+    if starts_with(ligne, "KICK|") { return "Expulsion proposée : " + sub(ligne, 5, len(ligne) - 5) }
+    if starts_with(ligne, "BAN|") { return "Bannissement proposé : " + sub(ligne, 4, len(ligne) - 4) }
+    return "Ligne ignorée : " + ligne
+}
+
+fn ai_mod_extraire_champ(texte: Text, rang: Int) -> Text {
+    var reste = texte
+    var courant = 0
+    while courant < rang {
+        let sep = find(reste, "|")
+        if not has(sep) { return "" }
+        let depart = unwrap_or(sep, 0) + 1
+        reste = sub(reste, depart, len(reste) - depart)
+        courant = courant + 1
+    }
+    let fin = find(reste, "|")
+    if has(fin) { return sub(reste, 0, unwrap_or(fin, 0)) }
+    return reste
+}
+
+fn ai_mod_reste_apres(texte: Text, rang: Int) -> Text {
+    var reste = texte
+    var courant = 0
+    while courant < rang {
+        let sep = find(reste, "|")
+        if not has(sep) { return "" }
+        let depart = unwrap_or(sep, 0) + 1
+        reste = sub(reste, depart, len(reste) - depart)
+        courant = courant + 1
+    }
+    return reste
+}
+
+fn ai_mod_enregistrer_plan(guild: Text, user: Text, demande: Text, cible: Text) -> Option<Reponse> {
+    let prompt = "Tu es assistant de modération Discord. Explique l'alerte, résume l'incident et propose UNE sanction maximum, sans jamais exécuter. Réponds uniquement avec 3 à 5 lignes. Ligne 1: SUMMARY|résumé court. Ligne 2: EVIDENCE|éléments observés. Ligne 3: REASONING|raisonnement moderation. Ligne 4 obligatoire: NONE|raison ou WARN|" + cible + "|raison ou MUTE|" + cible + "|secondes|raison ou KICK|" + cible + "|raison ou BAN|" + cible + "|raison. N'utilise BAN que pour spam massif, raid, doxxing, scam ou danger évident. Contexte: " + demande
+    let brut_ai = integration_ai(guild, prompt)
+    if not has(brut_ai) { return some(discord_reponse_ephemere("❌ IA indisponible.")) }
+    let brut = unwrap_or(brut_ai, "")
+    if not store_configurer(guild, "ai.mod.plan." + user, brut) { return some(discord_reponse_ephemere("❌ Proposition non enregistrée.")) }
+    let _audit = store_log_action(guild, user, "ai_mod_plan", cible, demande)
+    return some(discord_reponse_ephemere("🧠 Proposition IA de modération :\n```\n" + brut + "\n```\nAucune action n'est appliquée. Confirme avec `/ai_mod_confirm`."))
+}
+
+fn ai_mod_executer_ligne(token: Text, guild: Text, actor: Text, ligne: Text) -> Bool {
+    if starts_with(ligne, "NONE|") {
+        let _log_none = store_log_action(guild, actor, "ai_mod_no_action", "", sub(ligne, 5, len(ligne) - 5))
+        return true
+    }
+    if starts_with(ligne, "WARN|") {
+        let cible_warn = ai_mod_extraire_champ(ligne, 1)
+        let raison_warn = ai_mod_reste_apres(ligne, 2)
+        if cible_warn == "" or raison_warn == "" { return false }
+        return store_log_action(guild, actor, "warn", cible_warn, "IA modération confirmée : " + raison_warn)
+    }
+    if starts_with(ligne, "MUTE|") {
+        let cible_mute = ai_mod_extraire_champ(ligne, 1)
+        let secondes = unwrap_or(parse_int(ai_mod_extraire_champ(ligne, 2)), 0)
+        let raison_mute = ai_mod_reste_apres(ligne, 3)
+        if cible_mute == "" or secondes < 1 or secondes > 2419200 { return false }
+        if not discord_timeout_identifiant(token, guild, cible_mute, secondes) { return false }
+        return store_log_action(guild, actor, "mute", cible_mute, "IA modération confirmée " + text(secondes) + "s : " + raison_mute)
+    }
+    if starts_with(ligne, "KICK|") {
+        let cible_kick = ai_mod_extraire_champ(ligne, 1)
+        let raison_kick = ai_mod_reste_apres(ligne, 2)
+        if cible_kick == "" { return false }
+        if not discord_expulser_identifiant(token, guild, cible_kick) { return false }
+        return store_log_action(guild, actor, "kick", cible_kick, "IA modération confirmée : " + raison_kick)
+    }
+    if starts_with(ligne, "BAN|") {
+        let cible_ban = ai_mod_extraire_champ(ligne, 1)
+        let raison_ban = ai_mod_reste_apres(ligne, 2)
+        if cible_ban == "" { return false }
+        if not discord_bannir_identifiant(token, guild, cible_ban) { return false }
+        return store_log_action(guild, actor, "ban", cible_ban, "IA modération confirmée : " + raison_ban)
+    }
+    return false
+}
+
+fn commande_ai_moderation(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom != "ai_mod_alert" and nom != "ai_mod_incident" and nom != "ai_mod_confirm" { return none }
+    if not acl_autorise(req.corps, "warn") { return some(acl_refus("warn")) }
+    let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+    let actor = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+    if nom == "ai_mod_alert" {
+        let cible = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let contexte = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        return ai_mod_enregistrer_plan(guild, actor, "Membre ciblé <@" + cible + ">. " + contexte, cible)
+    }
+    if nom == "ai_mod_incident" {
+        let contexte_incident = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        return ai_mod_enregistrer_plan(guild, actor, contexte_incident, "")
+    }
+    let plan = store_lire(guild, "ai.mod.plan." + actor)
+    if not has(plan) { return some(discord_reponse_ephemere("❌ Aucune proposition de modération en attente.")) }
+    let token = bot_token()
+    if not has(token) { return some(discord_reponse_ephemere("❌ Token indisponible.")) }
+    var reste = unwrap_or(plan, "")
+    var ok = 0
+    var ignore = 0
+    while reste != "" {
+        let fin = find(reste, "\n")
+        var ligne = reste
+        if has(fin) { ligne = sub(reste, 0, unwrap_or(fin, 0)) }
+        if starts_with(ligne, "SUMMARY|") or starts_with(ligne, "EVIDENCE|") or starts_with(ligne, "REASONING|") {
+            ignore = ignore + 1
+        } else {
+            if ai_mod_action_valide(ligne) and ai_mod_executer_ligne(unwrap_or(token, ""), guild, actor, ligne) { ok = ok + 1 } else { ignore = ignore + 1 }
+        }
+        if not has(fin) { break }
+        let depart = unwrap_or(fin, 0) + 1
+        reste = sub(reste, depart, len(reste) - depart)
+    }
+    let _clear = store_supprimer(guild, "ai.mod.plan." + actor)
+    let _audit = store_log_action(guild, actor, "ai_mod_confirm", "", text(ok) + " action(s), " + text(ignore) + " ligne(s) ignorée(s)")
+    return some(discord_reponse_ephemere("✅ Modération confirmée : " + text(ok) + " action(s) appliquée(s). " + text(ignore) + " ligne(s) informatives/ignorées."))
+}

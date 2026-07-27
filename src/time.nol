@@ -1,0 +1,42 @@
+extern fn time(tloc: Ptr) -> Int depuis "time.h"
+
+fn epoch_maintenant() -> Int { unsafe { return time(ptr_null()) } }
+
+record DateUtc { annee: Int, mois: Int, jour: Int, heure: Int, minute: Int, seconde: Int }
+
+fn epoch_date(epoch: Int) -> DateUtc {
+    var jours = epoch / 86400
+    var reste = epoch - jours * 86400
+    if reste < 0 {
+        jours = jours - 1
+        reste = reste + 86400
+    }
+    let z = jours + 719468
+    let era = z / 146097
+    let doe = z - era * 146097
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+    let y = yoe + era * 400
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+    let mp = (5 * doy + 2) / 153
+    let jour = doy - (153 * mp + 2) / 5 + 1
+    var mois = mp + 3
+    if mp >= 10 { mois = mp - 9 }
+    var annee = y
+    if mois <= 2 { annee = y + 1 }
+    return DateUtc { annee: annee, mois: mois, jour: jour, heure: reste / 3600, minute: (reste / 60) % 60, seconde: reste % 60 }
+}
+
+fn zero(n: Int, largeur: Int) -> Text {
+    var s = text(n)
+    while len(s) < largeur { s = "0" + s }
+    return s
+}
+
+fn iso8601(epoch: Int) -> Text {
+    let d = epoch_date(epoch)
+    return zero(d.annee, 4) + "-" + zero(d.mois, 2) + "-" + zero(d.jour, 2) + "T" + zero(d.heure, 2) + ":" + zero(d.minute, 2) + ":" + zero(d.seconde, 2) + "Z"
+}
+
+fn epoch_decalage_utc(epoch: Int, decalage_heures: Int) -> Int {
+    return epoch + decalage_heures * 3600
+}

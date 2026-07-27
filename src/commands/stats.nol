@@ -1,0 +1,31 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../store.nol"
+
+fn commande_stats(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom != "stats" and nom != "stats_csv" and nom != "stats_report" and nom != "logs_csv" { return none }
+    if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+    let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+    if nom == "stats" {
+        let sanctions = store_compter(guild, "ban") + store_compter(guild, "kick") + store_compter(guild, "unban") + store_compter(guild, "warn") + store_compter(guild, "mute") + store_compter(guild, "unmute") + store_compter(guild, "clear") + store_compter(guild, "slowmode") + store_compter(guild, "lock") + store_compter(guild, "unlock")
+        return some(discord_reponse_ephemere("📊 Statistiques\nCommandes : " + text(store_compter(guild, "command_user:")) + "\nMessages : " + text(store_compter(guild, "message")) + "\nArrivées : " + text(store_compter(guild, "member_join")) + "\nDéparts : " + text(store_compter(guild, "member_leave")) + "\nVocal : " + text(store_somme_prefixe(guild, "voice.seconds.")) + " secondes\nTickets : " + text(store_compter(guild, "ticket_")) + "\nActions de modération : " + text(sanctions)))
+    }
+    if nom == "stats_csv" {
+        let csv = "metrique,valeur\ncommandes," + text(store_compter(guild, "command_user:")) + "\nmessages," + text(store_compter(guild, "message")) + "\narrivees," + text(store_compter(guild, "member_join")) + "\ndeparts," + text(store_compter(guild, "member_leave")) + "\nvoice_seconds," + text(store_somme_prefixe(guild, "voice.seconds.")) + "\ntickets," + text(store_compter(guild, "ticket_"))
+        return some(discord_reponse_ephemere("📄 Export CSV\n```csv\n" + csv + "\n```"))
+    }
+    if nom == "stats_report" {
+        let periode = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "jour"))
+        var secondes = 86400
+        if periode == "semaine" { secondes = 604800 }
+        if periode == "mois" { secondes = 2592000 }
+        if periode != "jour" and periode != "semaine" and periode != "mois" { return some(discord_reponse_ephemere("Période autorisée : jour, semaine ou mois.")) }
+        let moderation = store_compter_recent(guild, "ban", secondes) + store_compter_recent(guild, "kick", secondes) + store_compter_recent(guild, "warn", secondes) + store_compter_recent(guild, "mute", secondes)
+        return some(discord_reponse_ephemere("📈 Rapport " + periode + "\nMessages : " + text(store_compter_recent(guild, "message", secondes)) + "\nCommandes : " + text(store_compter_recent_prefixe(guild, "command_user:", secondes)) + "\nArrivées : " + text(store_compter_recent(guild, "member_join", secondes)) + "\nDéparts : " + text(store_compter_recent(guild, "member_leave", secondes)) + "\nModération : " + text(moderation)))
+    }
+    let logs = store_audit_csv(guild)
+    if not has(logs) { return some(discord_reponse_ephemere("Aucun log exportable.")) }
+    var csv_logs = unwrap_or(logs, "")
+    if len(csv_logs) > 1800 { csv_logs = sub(csv_logs, 0, 1790) + "\n..." }
+    return some(discord_reponse_ephemere("📄 Logs CSV\n```csv\n" + csv_logs + "\n```"))
+}

@@ -1,0 +1,55 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../discord_api.nol"
+import "../store.nol"
+
+fn channel_config_autorisee(cle: Text) -> Bool {
+    if cle == "welcome_channel" { return true }
+    if cle == "goodbye_channel" { return true }
+    if cle == "reports.channel" { return true }
+    if cle == "log.channel" { return true }
+    if cle == "log.moderation_channel" { return true }
+    if cle == "log.security_channel" { return true }
+    if cle == "log.community_channel" { return true }
+    if cle == "partnership.channel" { return true }
+    if cle == "voice.temp_category" { return true }
+    if cle == "ticket.category_id" { return true }
+    return false
+}
+
+fn channel_champ_autorise(champ: Text) -> Bool {
+    if champ == "name" { return true }
+    if champ == "topic" { return true }
+    if champ == "slowmode" { return true }
+    if champ == "nsfw" { return true }
+    if champ == "category" { return true }
+    if champ == "position" { return true }
+    return false
+}
+
+fn commande_channels(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom != "channel_edit" and nom != "channel_sync_config" { return none }
+    if not acl_admin(req.corps) { return some(acl_refus("admin")) }
+    let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+    let actor = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+    if nom == "channel_edit" {
+        let salon = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        let champ = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), ""))
+        let valeur = unwrap_or(json_chemin_texte(req.corps, "data.options.2.value"), "")
+        let token = bot_token()
+        if salon == "" or valeur == "" or not channel_champ_autorise(champ) or not has(token) { return some(discord_reponse_ephemere("Usage : `/channel_edit salon champ valeur`. Champs : name, topic, slowmode, nsfw, category, position.")) }
+        if discord_modifier_salon(unwrap_or(token, ""), salon, champ, valeur) {
+            let _audit = store_log_action(guild, actor, "channel_edit", salon, champ + "=" + valeur)
+            return some(discord_reponse_ephemere("✅ Salon modifié : `" + champ + "`."))
+        }
+        return some(discord_reponse_ephemere("❌ Modification impossible. Vérifie les permissions du bot, le type de salon et la valeur."))
+    }
+    let salon_config = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+    let cle = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+    if salon_config == "" or not channel_config_autorisee(cle) { return some(discord_reponse_ephemere("Usage : `/channel_sync_config salon clé`. Clés salon autorisées : welcome_channel, goodbye_channel, reports.channel, log.channel, log.moderation_channel, log.security_channel, log.community_channel, partnership.channel, voice.temp_category, ticket.category_id.")) }
+    if store_configurer(guild, cle, salon_config) {
+        let _audit_config = store_log_action(guild, actor, "channel_sync_config", salon_config, cle)
+        return some(discord_reponse_ephemere("✅ Configuration mise à jour : `" + cle + "` = <#" + salon_config + ">"))
+    }
+    return some(discord_reponse_ephemere("❌ Impossible d’enregistrer la configuration du salon."))
+}

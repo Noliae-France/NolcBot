@@ -1,0 +1,18 @@
+import "nolc-discord::src/lib.nol"
+import "../acl.nol"
+import "../discord_api.nol"
+import "../store.nol"
+
+fn commande_tickets(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom != "ticket_close" { return none }
+    if not acl_autorise(req.corps, "ticket_close") { return some(acl_refus("ticket_close")) }
+    if discord_fermer_ticket(req) {
+        let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        let channel = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
+        let actor = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
+        let _forget = store_supprimer(guild, "ticket.claim." + channel)
+        let _log = store_log_action(guild, actor, "ticket_close", channel, "Fermeture du ticket")
+        return some(discord_reponse_message("✅ Ticket fermé."))
+    }
+    return some(discord_reponse_ephemere("❌ Impossible de fermer ce ticket."))
+}

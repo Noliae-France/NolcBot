@@ -1,0 +1,405 @@
+import "nolc-discord::src/lib.nol"
+import "integration_policy.nol"
+import "integration_sources.nol"
+import "store.nol"
+
+fn integration_twitch_statut(chaine: Text) -> Option<Text> {
+    if not integration_identifiant_simple(chaine, 64) { return none }
+    let client = store_lire("_system", "integration.twitch.client_id")
+    let jeton = store_lire("_system", "integration.twitch.app_token")
+    if not has(client) or not has(jeton) { return none }
+    let hote = "api.twitch.tv"
+    let chemin = "/helix/streams?user_login=" + chaine
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return none }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 5000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return none }
+    let sslo = tls_connecter(unwrap_or(ctxo, ptr_null()), fd, hote)
+    if not has(sslo) { tcp_close(fd); return none }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let requete = "GET " + chemin + " HTTP/1.1\r\nHost: " + hote + "\r\nClient-ID: " + unwrap_or(client, "") + "\r\nAuthorization: Bearer " + unwrap_or(jeton, "") + "\r\nUser-Agent: NoliaeTwitch/1.0\r\nConnection: close\r\n\r\n"
+    let _n = tls_ecrire(ssl, requete)
+    var rep = ""
+    var lectures = 0
+    while lectures < 64 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" { break }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    if integration_http_statut(rep) < 200 or integration_http_statut(rep) >= 300 { return none }
+    let sep = find(rep, "\r\n\r\n")
+    if not has(sep) { return none }
+    let corps = sub(rep, unwrap_or(sep, 0) + 4, len(rep) - unwrap_or(sep, 0) - 4)
+    if contains(corps, "\"data\":[]") { return some("🔴 " + chaine + " est hors ligne.") }
+    if contains(corps, "\"data\":[") { return some("🟣 " + chaine + " est en direct sur Twitch.") }
+    return none
+}
+
+fn integration_http_statut(reponse: Text) -> Int {
+    let sp = find(reponse, " ")
+    if not has(sp) { return -1 }
+    let i = unwrap_or(sp, 0)
+    let reste = sub(reponse, i + 1, len(reponse))
+    let sp2 = find(reste, " ")
+    var fin = len(reste)
+    if has(sp2) { fin = unwrap_or(sp2, fin) }
+    return unwrap_or(parse_int(sub(reste, 0, fin)), -1)
+}
+
+fn integration_site_statut(url: Text) -> Int {
+    if not integration_url_autorisee(url) { return -1 }
+    let reste = sub(url, 8, len(url) - 8)
+    let slash = find(reste, "/")
+    var hote = reste
+    var chemin = "/"
+    if has(slash) {
+        let i = unwrap_or(slash, 0)
+        hote = sub(reste, 0, i)
+        chemin = sub(reste, i, len(reste) - i)
+    }
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return -1 }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 5000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return -1 }
+    let ctx = unwrap_or(ctxo, ptr_null())
+    let sslo = tls_connecter(ctx, fd, hote)
+    if not has(sslo) { tcp_close(fd); return -1 }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let req = "GET " + chemin + " HTTP/1.1\r\nHost: " + hote + "\r\nUser-Agent: NoliaeStatus/1.0\r\nConnection: close\r\n\r\n"
+    let _n = tls_ecrire(ssl, req)
+    var rep = ""
+    var lectures = 0
+    while lectures < 64 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" { break }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    return integration_http_statut(rep)
+}
+
+fn integration_rss_premier(url: Text) -> Option<Text> {
+    if not integration_url_autorisee(url) { return none }
+    let reste = sub(url, 8, len(url) - 8)
+    let slash = find(reste, "/")
+    var hote = reste
+    var chemin = "/"
+    if has(slash) { let i = unwrap_or(slash, 0); hote = sub(reste, 0, i); chemin = sub(reste, i, len(reste) - i) }
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return none }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 5000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return none }
+    let sslo = tls_connecter(unwrap_or(ctxo, ptr_null()), fd, hote)
+    if not has(sslo) { tcp_close(fd); return none }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let _n = tls_ecrire(ssl, "GET " + chemin + " HTTP/1.1\r\nHost: " + hote + "\r\nUser-Agent: NoliaeRSS/1.0\r\nConnection: close\r\n\r\n")
+    var rep = ""
+    var lectures = 0
+    while lectures < 128 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" { break }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    if integration_http_statut(rep) < 200 or integration_http_statut(rep) >= 400 { return none }
+    let separateur = find(rep, "\r\n\r\n")
+    if not has(separateur) { return none }
+    let corps = sub(rep, unwrap_or(separateur, 0) + 4, len(rep) - unwrap_or(separateur, 0) - 4)
+    let debut = find(corps, "<title>")
+    if not has(debut) { return none }
+    let d = unwrap_or(debut, 0) + 7
+    let fin = find(sub(corps, d, len(corps) - d), "</title>")
+    if not has(fin) { return none }
+    let titre = integration_rss_titre_normaliser(sub(corps, d, unwrap_or(fin, 0)))
+    return some(titre)
+}
+
+fn integration_texte_sans_mentions(texte: Text) -> Text {
+    var resultat = texte
+    var position = find(resultat, "@")
+    while has(position) {
+        let i = unwrap_or(position, 0)
+        resultat = sub(resultat, 0, i) + "@​" + sub(resultat, i + 1, len(resultat) - i - 1)
+        position = find(resultat, "@")
+    }
+    return resultat
+}
+
+fn integration_meteo(ville: Text) -> Option<Text> {
+    if ville == "" or len(ville) > 80 or contains(ville, "/") or contains(ville, "?") or contains(ville, "&") or contains(ville, ":") { return none }
+    var encodee = ville
+    var position = find(encodee, " ")
+    while has(position) {
+        let i = unwrap_or(position, 0)
+        encodee = sub(encodee, 0, i) + "%20" + sub(encodee, i + 1, len(encodee) - i - 1)
+        position = find(encodee, " ")
+    }
+    let url = "https://wttr.in/" + encodee + "?format=3"
+    let reste = sub(url, 8, len(url) - 8)
+    let slash = find(reste, "/")
+    let hote = "wttr.in"
+    let chemin = sub(reste, unwrap_or(slash, 7), len(reste) - unwrap_or(slash, 7))
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return none }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 5000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return none }
+    let sslo = tls_connecter(unwrap_or(ctxo, ptr_null()), fd, hote)
+    if not has(sslo) { tcp_close(fd); return none }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let _n = tls_ecrire(ssl, "GET " + chemin + " HTTP/1.1\r\nHost: wttr.in\r\nUser-Agent: NoliaeWeather/1.0\r\nConnection: close\r\n\r\n")
+    var rep = ""
+    var lectures = 0
+    while lectures < 32 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" { break }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    if integration_http_statut(rep) < 200 or integration_http_statut(rep) >= 400 { return none }
+    let sep = find(rep, "\r\n\r\n")
+    if not has(sep) { return none }
+    let debut = unwrap_or(sep, 0) + 4
+    var resultat = sub(rep, debut, len(rep) - debut)
+    if len(resultat) > 500 { resultat = sub(resultat, 0, 500) }
+    return some(resultat)
+}
+
+fn integration_definition(mot: Text) -> Option<Text> {
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
+    if mot == "" or len(mot) > 64 { return none }
+    var i = 0
+    while i < len(mot) {
+        if not contains(alphabet, sub(mot, i, 1)) { return none }
+        i = i + 1
+    }
+    let url = "https://api.dictionaryapi.dev/api/v2/entries/en/" + mot
+    let reste = sub(url, 8, len(url) - 8)
+    let slash = find(reste, "/")
+    if not has(slash) { return none }
+    let index_slash = unwrap_or(slash, 0)
+    let hote = sub(reste, 0, index_slash)
+    let chemin = sub(reste, index_slash, len(reste) - index_slash)
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return none }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 5000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return none }
+    let sslo = tls_connecter(unwrap_or(ctxo, ptr_null()), fd, hote)
+    if not has(sslo) { tcp_close(fd); return none }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let _n = tls_ecrire(ssl, "GET " + chemin + " HTTP/1.1\r\nHost: " + hote + "\r\nUser-Agent: NoliaeDefinition/1.0\r\nConnection: close\r\n\r\n")
+    var rep = ""
+    var lectures = 0
+    while lectures < 64 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" { break }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    if integration_http_statut(rep) < 200 or integration_http_statut(rep) >= 300 { return none }
+    let marqueur = "\"definition\":\""
+    let debut = find(rep, marqueur)
+    if not has(debut) { return none }
+    let d = unwrap_or(debut, 0) + len(marqueur)
+    var recherche = d
+    var fin_reelle = -1
+    while recherche < len(rep) {
+        let prochain = find(sub(rep, recherche, len(rep) - recherche), "\"")
+        if not has(prochain) { break }
+        let candidat = recherche + unwrap_or(prochain, 0)
+        if candidat == 0 or sub(rep, candidat - 1, 1) != "\\" { fin_reelle = candidat; break }
+        recherche = candidat + 1
+    }
+    if fin_reelle < 0 { return none }
+    var resultat_definition = sub(rep, d, fin_reelle - d)
+    if len(resultat_definition) > 900 { resultat_definition = sub(resultat_definition, 0, 900) + "..." }
+    return some(resultat_definition)
+}
+
+fn integration_calendrier(url: Text) -> Option<Text> {
+    if not integration_url_autorisee(url) or len(url) > 500 { return none }
+    let reste = sub(url, 8, len(url) - 8)
+    let slash = find(reste, "/")
+    if not has(slash) { return none }
+    let index_slash = unwrap_or(slash, 0)
+    let hote = sub(reste, 0, index_slash)
+    let chemin = sub(reste, index_slash, len(reste) - index_slash)
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return none }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 5000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return none }
+    let sslo = tls_connecter(unwrap_or(ctxo, ptr_null()), fd, hote)
+    if not has(sslo) { tcp_close(fd); return none }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let _n = tls_ecrire(ssl, "GET " + chemin + " HTTP/1.1\r\nHost: " + hote + "\r\nUser-Agent: NoliaeCalendar/1.0\r\nConnection: close\r\n\r\n")
+    var rep = ""
+    var lectures = 0
+    while lectures < 64 { let morceau = tls_lire(ssl); if morceau == "" { break }; rep += morceau; lectures = lectures + 1 }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    if integration_http_statut(rep) < 200 or integration_http_statut(rep) >= 300 { return none }
+    let sep = find(rep, "\r\n\r\n")
+    if not has(sep) { return none }
+    let corps = sub(rep, unwrap_or(sep, 0) + 4, len(rep) - unwrap_or(sep, 0) - 4)
+    let debut_evenement = find(corps, "BEGIN:VEVENT")
+    if not has(debut_evenement) { return none }
+    let bloc = sub(corps, unwrap_or(debut_evenement, 0), len(corps) - unwrap_or(debut_evenement, 0))
+    let titre_debut = find(bloc, "SUMMARY:")
+    let date_debut = find(bloc, "DTSTART")
+    if not has(titre_debut) or not has(date_debut) { return none }
+    let titre_pos = unwrap_or(titre_debut, 0) + 8
+    let titre_reste = sub(bloc, titre_pos, len(bloc) - titre_pos)
+    let fin_titre = find(titre_reste, "\r\n")
+    var titre = titre_reste
+    if has(fin_titre) { titre = sub(titre_reste, 0, unwrap_or(fin_titre, 0)) }
+    if len(titre) > 300 { titre = sub(titre, 0, 300) }
+    return some("📅 Prochain événement : **" + integration_texte_sans_mentions(titre) + "**")
+}
+
+fn integration_ai(guild: Text, question: Text) -> Option<Text> {
+    let fournisseur = lower(unwrap_or(store_lire(guild, "ai.provider"), "openai"))
+    let cle = store_lire(guild, "ai.api_key")
+    if not has(cle) or question == "" or len(question) > 2000 { return none }
+    var hote = "api.openai.com"
+    var chemin = "/v1/chat/completions"
+    var modele = unwrap_or(store_lire(guild, "ai.model"), "gpt-5.6")
+    var corps = "{\"model\":" + json_texte(modele) + ",\"messages\":[{\"role\":\"user\",\"content\":" + json_texte(question) + "}]}"
+    var autorisation = "Authorization: Bearer " + unwrap_or(cle, "") + "\r\n"
+    var marqueur = "\"content\":\""
+    if fournisseur == "mistral" { hote = "api.mistral.ai"; if not has(store_lire(guild, "ai.model")) { modele = "mistral-small-latest"; corps = "{\"model\":" + json_texte(modele) + ",\"messages\":[{\"role\":\"user\",\"content\":" + json_texte(question) + "}]}" } }
+    if fournisseur == "gemini" {
+        hote = "generativelanguage.googleapis.com"
+        if not has(store_lire(guild, "ai.model")) { modele = "gemini-3.5-flash" }
+        chemin = "/v1beta/models/" + modele + ":generateContent?key=" + unwrap_or(cle, "")
+        corps = "{\"contents\":[{\"parts\":[{\"text\":" + json_texte(question) + "}]}]}"
+        autorisation = ""
+        marqueur = "\"text\":\""
+    }
+    if fournisseur != "openai" and fournisseur != "mistral" and fournisseur != "gemini" { return none }
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return none }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 5000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return none }
+    let sslo = tls_connecter(unwrap_or(ctxo, ptr_null()), fd, hote)
+    if not has(sslo) { tcp_close(fd); return none }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let _n = tls_ecrire(ssl, "POST " + chemin + " HTTP/1.1\r\nHost: " + hote + "\r\n" + autorisation + "Content-Type: application/json\r\nContent-Length: " + text(len(corps)) + "\r\nConnection: close\r\n\r\n" + corps)
+    var rep = ""
+    var lectures = 0
+    while lectures < 128 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" { break }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    if integration_http_statut(rep) < 200 or integration_http_statut(rep) >= 300 { return none }
+    let debut = find(rep, marqueur)
+    if not has(debut) { return none }
+    let d = unwrap_or(debut, 0) + len(marqueur)
+    var recherche = d
+    var fin_reelle = -1
+    while recherche < len(rep) {
+        let prochain = find(sub(rep, recherche, len(rep) - recherche), "\"")
+        if not has(prochain) { break }
+        let candidat = recherche + unwrap_or(prochain, 0)
+        if candidat == 0 or sub(rep, candidat - 1, 1) != "\\" { fin_reelle = candidat; break }
+        recherche = candidat + 1
+    }
+    if fin_reelle < 0 { return none }
+    var resultat = sub(rep, d, fin_reelle - d)
+    if len(resultat) > 1800 { resultat = sub(resultat, 0, 1800) + "..." }
+    return some(resultat)
+}
+
+fn integration_traduire(texte: Text, langue: Text) -> Option<Text> {
+    let endpoint = store_lire("_system", "integration.translate.url")
+    if not has(endpoint) or texte == "" or len(texte) > 1500 or langue == "" or len(langue) > 16 { return none }
+    let url = unwrap_or(endpoint, "")
+    if not integration_url_autorisee(url) { return none }
+    let reste = sub(url, 8, len(url) - 8)
+    let slash = find(reste, "/")
+    if not has(slash) { return none }
+    let index_slash = unwrap_or(slash, 0)
+    let hote = sub(reste, 0, index_slash)
+    let chemin = sub(reste, index_slash, len(reste) - index_slash)
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return none }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 5000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return none }
+    let sslo = tls_connecter(unwrap_or(ctxo, ptr_null()), fd, hote)
+    if not has(sslo) { tcp_close(fd); return none }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let cle = store_lire("_system", "integration.translate.api_key")
+    var corps = "{\"q\":" + json_texte(texte) + ",\"source\":\"auto\",\"target\":" + json_texte(lower(langue)) + ",\"format\":\"text\""
+    if has(cle) { corps += ",\"api_key\":" + json_texte(unwrap_or(cle, "")) }
+    corps += "}"
+    let _n = tls_ecrire(ssl, "POST " + chemin + " HTTP/1.1\r\nHost: " + hote + "\r\nContent-Type: application/json\r\nContent-Length: " + text(len(corps)) + "\r\nConnection: close\r\n\r\n" + corps)
+    var rep = ""
+    var lectures = 0
+    while lectures < 96 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" { break }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    if integration_http_statut(rep) < 200 or integration_http_statut(rep) >= 300 { return none }
+    let marqueur = "\"translatedText\":\""
+    let debut = find(rep, marqueur)
+    if not has(debut) { return none }
+    let d = unwrap_or(debut, 0) + len(marqueur)
+    var recherche_traduction = d
+    var fin_reelle_traduction = -1
+    while recherche_traduction < len(rep) {
+        let prochain_traduction = find(sub(rep, recherche_traduction, len(rep) - recherche_traduction), "\"")
+        if not has(prochain_traduction) { break }
+        let candidat_traduction = recherche_traduction + unwrap_or(prochain_traduction, 0)
+        if candidat_traduction == 0 or sub(rep, candidat_traduction - 1, 1) != "\\" { fin_reelle_traduction = candidat_traduction; break }
+        recherche_traduction = candidat_traduction + 1
+    }
+    if fin_reelle_traduction < 0 { return none }
+    var resultat = sub(rep, d, fin_reelle_traduction - d)
+    if len(resultat) > 1800 { resultat = sub(resultat, 0, 1800) + "..." }
+    return some(resultat)
+}
+
+fn integration_qr_url(texte: Text) -> Option<Text> {
+    if texte == "" or len(texte) > 500 or contains(texte, "&") or contains(texte, "?") or contains(texte, "#") { return none }
+    var encodee = texte
+    var position = find(encodee, " ")
+    while has(position) {
+        let i = unwrap_or(position, 0)
+        encodee = sub(encodee, 0, i) + "%20" + sub(encodee, i + 1, len(encodee) - i - 1)
+        position = find(encodee, " ")
+    }
+    return some("https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + encodee)
+}

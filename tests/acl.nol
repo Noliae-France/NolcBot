@@ -1,0 +1,17 @@
+import "../src/acl.nol"
+
+fn test_role_exact() {
+    let payload = "{\"member\":{\"roles\":[\"12345\",\"900\"]}}"
+    assert(role_discord_present(payload, "12345"), "role présent accepté")
+    assert(not role_discord_present(payload, "2345"), "sous-identifiant refusé")
+    assert(not role_discord_present(payload, "123456"), "identifiant voisin refusé")
+}
+
+fn test_listes_exactes() {
+    assert(liste_ids_contient("123,456,789", "456"), "identifiant central accepté")
+    assert(not liste_ids_contient("123,456,789", "45"), "préfixe refusé")
+    assert(not liste_ids_contient("123,456,789", "4567"), "suffixe refusé")
+    assert(not liste_ids_contient("", "123"), "liste vide refusée")
+}
+
+fn main() {}

@@ -1,0 +1,48 @@
+import "nolc-discord::src/lib.nol"
+import "../time.nol"
+
+fn commande_utility(req: Requete, nom: Text) -> Option<Reponse> {
+    if nom == "timestamp" {
+        let maintenant = epoch_maintenant()
+        return some(discord_reponse_message("🕒 Timestamp actuel\nUnix : `" + text(maintenant) + "`\nDate : <t:" + text(maintenant) + ":F>\nRelatif : <t:" + text(maintenant) + ":R>"))
+    }
+    if nom == "timezone" {
+        let decalage = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
+        if decalage < -12 or decalage > 14 { return some(discord_reponse_ephemere("❌ Le décalage UTC doit être compris entre -12 et +14.")) }
+        let local = epoch_decalage_utc(epoch_maintenant(), decalage)
+        var signe = ""
+        if decalage >= 0 { signe = "+" }
+        return some(discord_reponse_message("🌍 Heure UTC" + signe + text(decalage) + " : `" + iso8601(local) + "`\nUnix de référence : `" + text(epoch_maintenant()) + "`"))
+    }
+    if nom == "calc" {
+        let gauche = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
+        let operateur = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let droite = unwrap_or(json_chemin_int(req.corps, "data.options.2.value"), 0)
+        var resultat = 0
+        if operateur == "+" { resultat = gauche + droite }
+        else if operateur == "-" { resultat = gauche - droite }
+        else if operateur == "*" { resultat = gauche * droite }
+        else if operateur == "/" { if droite == 0 { return some(discord_reponse_ephemere("❌ Division par zéro impossible.")) }; resultat = gauche / droite }
+        else if operateur == "%" { if droite == 0 { return some(discord_reponse_ephemere("❌ Modulo par zéro impossible.")) }; resultat = gauche % droite }
+        else { return some(discord_reponse_ephemere("Opérateur autorisé : `+`, `-`, `*`, `/` ou `%`.")) }
+        return some(discord_reponse_message("🧮 `" + text(gauche) + " " + operateur + " " + text(droite) + "` = **" + text(resultat) + "**"))
+    }
+    if nom == "convert" {
+        let valeur = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
+        let depuis = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
+        let vers = unwrap_or(json_chemin_texte(req.corps, "data.options.2.value"), "")
+        var resultat = 0
+        var valide = true
+        if depuis == "m" and vers == "km" { resultat = valeur / 1000 }
+        else if depuis == "km" and vers == "m" { resultat = valeur * 1000 }
+        else if depuis == "cm" and vers == "m" { resultat = valeur / 100 }
+        else if depuis == "m" and vers == "cm" { resultat = valeur * 100 }
+        else if depuis == "g" and vers == "kg" { resultat = valeur / 1000 }
+        else if depuis == "kg" and vers == "g" { resultat = valeur * 1000 }
+        else if depuis == vers { resultat = valeur }
+        else { valide = false }
+        if not valide { return some(discord_reponse_ephemere("Unités autorisées : `m`, `km`, `cm`, `g`, `kg`.")) }
+        return some(discord_reponse_message("🔁 `" + text(valeur) + " " + depuis + "` = **" + text(resultat) + " " + vers + "**"))
+    }
+    return none
+}

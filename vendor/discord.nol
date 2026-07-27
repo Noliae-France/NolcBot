@@ -58,6 +58,11 @@ fn discord_reponse_ephemere(contenu: Text) -> Reponse {
     return reponse_json(corps)
 }
 
+fn discord_reponse_modal(custom_id: Text, titre: Text, etiquette: Text) -> Reponse {
+    let champ = "{\"type\":1,\"components\":[{\"type\":4,\"custom_id\":\"reponse\",\"label\":" + json_texte(etiquette) + ",\"style\":2,\"min_length\":1,\"max_length\":1000,\"required\":true}]}"
+    return reponse_json("{\"type\":9,\"data\":{\"custom_id\":" + json_texte(custom_id) + ",\"title\":" + json_texte(titre) + ",\"components\":[" + champ + "]}}")
+}
+
 fn discord_reponse_401(req: Requete) -> Reponse {
     return reponse_problem(erreur_http(401, "Unauthorized", "Signature Discord invalide.", requete_id(req)))
 }
@@ -81,6 +86,13 @@ fn discord_dispatch(req: Requete, handler: Fn(Requete, Text) -> Reponse) -> WebR
             return WebResultat.WebEchec(erreur_http(400, "Bad Request", "Nom de commande absent.", requete_id(req)))
         }
         return WebResultat.WebOk(handler(req, unwrap_or(nom, "")))
+    }
+    if ty == 5 {
+        let custom_id = json_chemin_texte(req.corps, "data.custom_id")
+        if not has(custom_id) {
+            return WebResultat.WebEchec(erreur_http(400, "Bad Request", "Identifiant de modal absent.", requete_id(req)))
+        }
+        return WebResultat.WebOk(handler(req, unwrap_or(custom_id, "")))
     }
     return WebResultat.WebEchec(erreur_http(400, "Bad Request", "Type d'interaction non supporte.", requete_id(req)))
 }

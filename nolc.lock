@@ -1,0 +1,8 @@
+# Généré par nolc pkg. Ne pas modifier à la main.
+version = 1
+
+[[paquet]]
+nom = "nolc-discord"
+source = "git+https://github.com/Noliae-France/nolc-discord.git"
+revision = "26eb594b38c18568cc211c569feed82f110eb083"
+checksum = "sha256:6bb2981cff0338fa84da97b252aea01b9eeeee7ce993d49cd140dfdc6f1ea773"

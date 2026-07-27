@@ -1,0 +1,19 @@
+import "../src/automod.nol"
+
+fn test_majuscule() {
+    assert(message_trop_majuscule("BONJOUR TOUT LE MONDE"), "majuscules détectées")
+    assert(not message_trop_majuscule("Bonjour tout le monde"), "texte normal accepté")
+    assert(not message_trop_majuscule("ABC"), "message trop court accepté")
+}
+
+fn test_mentions() {
+    assert(occurrences("<@1> <@2> <@3>", "<@") == 3, "mentions comptées")
+    assert(occurrences("texte", "<@") == 0, "absence de mention")
+}
+
+fn test_mots() {
+    assert(contient_mot_interdit("Ceci est INTERDIT", "spam,interdit") == "interdit", "mot interdit insensible à la casse")
+    assert(contient_mot_interdit("message propre", "spam,insulte") == "", "message propre accepté")
+}
+
+fn main() {}

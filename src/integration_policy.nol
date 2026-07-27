@@ -1,0 +1,11 @@
+import "nolc-discord::src/lib.nol"
+
+fn integration_url_autorisee(url: Text) -> Bool {
+    if len(url) < 9 or len(url) > 2048 or not starts_with(url, "https://") { return false }
+    let reste = sub(url, 8, len(url) - 8)
+    let slash = find(reste, "/")
+    var hote = reste
+    if has(slash) { hote = sub(reste, 0, unwrap_or(slash, 0)) }
+    if hote == "" or contains(hote, ":") or contains(hote, "@") or hote == "localhost" or starts_with(hote, "127.") or starts_with(hote, "10.") or starts_with(hote, "192.168.") { return false }
+    return true
+}

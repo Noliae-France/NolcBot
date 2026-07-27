@@ -1,0 +1,45 @@
+import "nolc-discord::src/lib.nol"
+
+fn message_trop_majuscule(texte: Text) -> Bool {
+    let majuscules = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    let minuscules = "abcdefghijklmnopqrstuvwxyz"
+    var maj = 0
+    var lettres = 0
+    var i = 0
+    while i < len(texte) {
+        let caractere = sub(texte, i, 1)
+        if contains(majuscules, caractere) { maj = maj + 1; lettres = lettres + 1 }
+        else if contains(minuscules, caractere) { lettres = lettres + 1 }
+        i = i + 1
+    }
+    return lettres >= 8 and maj * 100 >= lettres * 70
+}
+
+fn occurrences(texte: Text, motif: Text) -> Int {
+    if motif == "" { return 0 }
+    var reste = texte
+    var total = 0
+    var position = find(reste, motif)
+    while has(position) {
+        total = total + 1
+        let debut = unwrap_or(position, 0) + len(motif)
+        if debut >= len(reste) { break }
+        reste = sub(reste, debut, len(reste) - debut)
+        position = find(reste, motif)
+    }
+    return total
+}
+
+fn contient_mot_interdit(texte: Text, liste: Text) -> Text {
+    var reste = liste
+    while reste != "" {
+        let separateur = find(reste, ",")
+        var mot = reste
+        if has(separateur) { mot = sub(reste, 0, unwrap_or(separateur, 0)) }
+        if mot != "" and contains(lower(texte), lower(mot)) { return mot }
+        if not has(separateur) { break }
+        let suite = unwrap_or(separateur, 0) + 1
+        reste = sub(reste, suite, len(reste) - suite)
+    }
+    return ""
+}
