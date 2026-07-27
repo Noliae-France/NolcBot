@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Noliae-France/NolcBot/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/discord-integration.yml"><img alt="Discord integration" src="https://github.com/Noliae-France/NolcBot/actions/workflows/discord-integration.yml/badge.svg"></a>
+  <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/discord-integration.yml"><img alt="Discord integration" src="https://img.shields.io/badge/Discord%20integration-manual%20tested-5865f2"></a>
   <a href="https://github.com/Noliae-France/NolcBot/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/Noliae-France/NolcBot?include_prereleases&label=release"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Platform" src="https://img.shields.io/badge/platform-linux-2ea44f"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Language" src="https://img.shields.io/badge/language-Nolc-5865f2"></a>
@@ -77,12 +77,12 @@ Les seuls secrets obligatoires en environnement sont `DISCORD_APP_ID` et `DISCOR
 
 ## ⚙️ CI/CD et releases
 
-La CI publique est découpée pour garder des checks GitHub propres :
+La CI publique est découpée pour garder des checks GitHub propres : `ci` est le check automatique obligatoire, tandis que `discord-integration` est un test manuel connecté à un vrai serveur Discord. Les anciens runs manuels peuvent être rouges dans l’historique si les secrets étaient absents ou en cours de configuration ; cela ne reflète pas l’état du build automatique.
 
 Pipeline :
 
 - [`ci`](.github/workflows/ci.yml) : sur push et pull request, vérifie qu’aucun secret brut n’est versionné, installe Nolc, compile, teste et publie un artefact Linux.
-- [`discord-integration`](.github/workflows/discord-integration.yml) : lancement manuel uniquement, utilise les **GitHub Secrets** pour tester SQLite, l’API Discord, l’application, le serveur de test, la présence du bot, l’enregistrement des commandes, une connexion Gateway courte et OpenAI si la clé est fournie.
+- [`discord-integration`](.github/workflows/discord-integration.yml) : lancement manuel uniquement, non bloquant pour les push/PR. Il utilise les **GitHub Secrets** pour tester SQLite, l’API Discord, l’application, le serveur de test, la présence du bot, l’enregistrement des commandes, une connexion Gateway courte, les actions Discord réelles, la mesure RAM/CPU et OpenAI si la clé est fournie.
 - [`release`](.github/workflows/release.yml) : sur tag `v*`, recompile, reteste, prépare l’artefact Linux et crée une GitHub Release.
 
 🔐 Secrets GitHub attendus pour le smoke test Discord :
