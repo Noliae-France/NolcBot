@@ -62,6 +62,25 @@ assert_command() {
   echo "OK: /$command"
 }
 
+discord_get() {
+  local label="$1"
+  local path="$2"
+  local out="$3"
+  local status
+  status="$(curl -sS -o "$out" -w '%{http_code}' -H "$auth_header" "$discord_api$path")"
+  if [ "$status" != "200" ]; then
+    echo "::error::$label a échoué côté Discord REST (HTTP $status)"
+    if [ "$status" = "401" ]; then
+      echo "::error::DISCORD_BOT_TOKEN est invalide, révoqué, mal copié ou ne correspond pas à un token de bot actif."
+    elif [ "$status" = "403" ]; then
+      echo "::error::Le bot est authentifié mais n'a pas les permissions nécessaires pour cette vérification."
+    elif [ "$status" = "404" ]; then
+      echo "::error::Ressource Discord introuvable: vérifie l'ID configuré dans GitHub Secrets."
+    fi
+    exit 1
+  fi
+}
+
 section "Initialisation SQLite et clé publique Discord"
 ./bot setup-public-key "$DISCORD_PUBLIC_KEY" >/dev/null
 stored_key="$(sqlite3 "$NOLIAE_DB_PATH" "SELECT value FROM guild_config WHERE guild_id='_system' AND key='discord.public_key';")"
@@ -95,7 +114,8 @@ discord_api="https://discord.com/api/v10"
 auth_header="Authorization: Bot ${DISCORD_BOT_TOKEN}"
 
 section "Vérification REST Discord: bot courant"
-me_json="$(curl -fsS -H "$auth_header" "$discord_api/users/@me")"
+discord_get "Vérification du bot courant" "/users/@me" "$work_dir/me.json"
+me_json="$(cat "$work_dir/me.json")"
 bot_id="$(printf '%s' "$me_json" | jq -r '.id // empty')"
 bot_name="$(printf '%s' "$me_json" | jq -r '.username // empty')"
 if [ -z "$bot_id" ]; then
@@ -105,7 +125,8 @@ fi
 echo "Bot Discord authentifié: ${bot_name} (${bot_id})"
 
 section "Vérification REST Discord: application"
-app_json="$(curl -fsS -H "$auth_header" "$discord_api/oauth2/applications/@me")"
+discord_get "Vérification de l'application" "/oauth2/applications/@me" "$work_dir/app.json"
+app_json="$(cat "$work_dir/app.json")"
 app_id="$(printf '%s' "$app_json" | jq -r '.id // empty')"
 if [ "$app_id" != "$DISCORD_APP_ID" ]; then
   echo "::error::DISCORD_APP_ID ne correspond pas à l'application du token"
@@ -113,7 +134,8 @@ if [ "$app_id" != "$DISCORD_APP_ID" ]; then
 fi
 
 section "Vérification REST Discord: serveur de test"
-guild_json="$(curl -fsS -H "$auth_header" "$discord_api/guilds/$DISCORD_TEST_GUILD_ID")"
+discord_get "Vérification du serveur de test" "/guilds/$DISCORD_TEST_GUILD_ID" "$work_dir/guild.json"
+guild_json="$(cat "$work_dir/guild.json")"
 guild_name="$(printf '%s' "$guild_json" | jq -r '.name // empty')"
 if [ -z "$guild_name" ]; then
   echo "::error::Serveur de test inaccessible"
@@ -122,7 +144,8 @@ fi
 echo "Serveur de test accessible: ${guild_name} (${DISCORD_TEST_GUILD_ID})"
 
 section "Vérification REST Discord: présence du bot sur le serveur"
-member_json="$(curl -fsS -H "$auth_header" "$discord_api/guilds/$DISCORD_TEST_GUILD_ID/members/$bot_id")"
+discord_get "Vérification de présence du bot" "/guilds/$DISCORD_TEST_GUILD_ID/members/$bot_id" "$work_dir/member.json"
+member_json="$(cat "$work_dir/member.json")"
 member_user_id="$(printf '%s' "$member_json" | jq -r '.user.id // empty')"
 if [ "$member_user_id" != "$bot_id" ]; then
   echo "::error::Le bot n'est pas membre du serveur de test"
@@ -133,7 +156,8 @@ section "Enregistrement des commandes slash"
 ./bot register >/dev/null
 
 section "Vérification REST Discord: commandes globales enregistrées"
-commands_json="$(curl -fsS -H "$auth_header" "$discord_api/applications/$DISCORD_APP_ID/commands")"
+discord_get "Lecture des commandes globales" "/applications/$DISCORD_APP_ID/commands" "$work_dir/commands.json"
+commands_json="$(cat "$work_dir/commands.json")"
 command_count="$(printf '%s' "$commands_json" | jq 'length')"
 if [ "$command_count" -lt 10 ]; then
   echo "::error::Trop peu de commandes Discord enregistrées: $command_count"
