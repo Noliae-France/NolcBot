@@ -274,7 +274,7 @@ echo "HTTP: démarrage sans échec immédiat."
 
 http_max_rss_kb="$(awk -F: '/Maximum resident set size/ {gsub(/^[ \t]+/, "", $2); print $2}' "$work_dir/http.time" | tail -1)"
 http_cpu_percent="$(awk -F: '/Percent of CPU this job got/ {gsub(/^[ \t]+/, "", $2); print $2}' "$work_dir/http.time" | tail -1)"
-http_elapsed="$(awk -F: '/Elapsed .* wall clock/ {gsub(/^[ \t]+/, "", $2 ":" $3 ":" $4); print $2 ":" $3 ":" $4}' "$work_dir/http.time" | tail -1)"
+http_elapsed="$(sed -n 's/.*Elapsed .*: //p' "$work_dir/http.time" | tail -1)"
 if [ -n "${http_max_rss_kb:-}" ]; then
   http_max_rss_mb=$(( (http_max_rss_kb + 1023) / 1024 ))
   echo "Perf HTTP: RAM max ${http_max_rss_mb} MiB (${http_max_rss_kb} KiB), CPU ${http_cpu_percent:-inconnu}, durée ${http_elapsed:-inconnue}."
@@ -300,7 +300,7 @@ echo "Gateway: connexion lancée sans échec immédiat."
 
 gateway_max_rss_kb="$(awk -F: '/Maximum resident set size/ {gsub(/^[ \t]+/, "", $2); print $2}' "$work_dir/gateway.time" | tail -1)"
 gateway_cpu_percent="$(awk -F: '/Percent of CPU this job got/ {gsub(/^[ \t]+/, "", $2); print $2}' "$work_dir/gateway.time" | tail -1)"
-gateway_elapsed="$(awk -F: '/Elapsed .* wall clock/ {gsub(/^[ \t]+/, "", $2 ":" $3 ":" $4); print $2 ":" $3 ":" $4}' "$work_dir/gateway.time" | tail -1)"
+gateway_elapsed="$(sed -n 's/.*Elapsed .*: //p' "$work_dir/gateway.time" | tail -1)"
 if [ -n "${gateway_max_rss_kb:-}" ]; then
   gateway_max_rss_mb=$(( (gateway_max_rss_kb + 1023) / 1024 ))
   echo "Perf Gateway: RAM max ${gateway_max_rss_mb} MiB (${gateway_max_rss_kb} KiB), CPU ${gateway_cpu_percent:-inconnu}, durée ${gateway_elapsed:-inconnue}."
