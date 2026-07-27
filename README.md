@@ -23,14 +23,40 @@ NolcBot est un bot Discord natif basé sur le client [`nolc-discord`](https://gi
 
 > L’édition de ce dépôt est le mode **OSS / self-host**. Le mode **SaaS** commercial avec licences payantes est décrit plus bas comme architecture cible séparée.
 
-## Points forts
+## Vision
 
-- **Modules séparés** : modération, tickets, communauté, économie, jeux, statistiques, utilitaires, IA, intégrations, salons et formulaires.
-- **Configuration sans `.env` métier** : le token Discord et l’App ID restent en environnement ; les rôles, salons, ACL, modules et réglages serveur vivent en SQLite.
-- **Dashboard web** : configuration multi-serveurs, modules, overlays stream, métriques et routes admin protégées.
-- **Sécurité** : audit SQLite, scan anti-secrets en CI, refus des clés sensibles dans les commandes/dashboard, données personnelles exportables/supprimables.
-- **CI/CD public** : build Linux, tests Nolc, smoke SQLite, scan anti-secrets, artefacts de build et publication automatique sur tags `v*`.
-- **IA optionnelle** : OpenAI/ChatGPT, Gemini et Mistral via clés serveur configurables, avec limites d’usage.
+NolcBot veut rester simple à héberger, mais sérieux techniquement : un bot modulaire, configurable depuis Discord ou le dashboard, avec audit, permissions, intégrations, assistants IA et CI/CD propre. L’objectif n’est pas d’avoir un gros fichier magique impossible à maintenir, mais un bot que l’on peut faire évoluer module par module.
+
+## Fonctionnalités clés
+
+| Domaine | Ce que NolcBot apporte |
+| --- | --- |
+| Administration | ACL, groupes, rôles réels Discord, configuration SQLite, dashboard web |
+| Modération | ban, kick, mute, warn, sanctions, notes privées, clear, slowmode, automod |
+| Communauté | accueil, départs, FAQ, annonces, onboarding, idées d’événements |
+| Tickets | création, participants, fermeture, anti-abus et audit |
+| IA | ChatGPT/OpenAI, Gemini, Mistral, FAQ IA, assistant admin et assistant modération avec confirmation humaine |
+| Intégrations | Twitch, YouTube, GitHub, Reddit, RSS, calendriers, statut de site |
+| Utilitaires | profils, serveur, rôles, salons, avatar, QR, météo, traduction, rappels, timestamps |
+| Jeux & fun | dés, pile ou face, 8-ball, quiz, devinettes, memes, morpion, compatibilité |
+| Observabilité | `/health`, `/metrics`, audit SQLite, rapports stats, artefacts CI |
+
+## Architecture rapide
+
+```text
+NolcBot
+├─ core HTTP / Gateway Discord
+├─ router de commandes
+├─ modules métier
+│  ├─ moderation, tickets, community, economy, fun
+│  ├─ stats, utility, integrations, ai, forms, channels
+│  └─ assistants IA admin / modération
+├─ store SQLite self-host
+├─ dashboard web
+└─ scripts CI/CD, backup, restore, deploy systemd
+```
+
+Les seuls secrets obligatoires en environnement sont `DISCORD_APP_ID` et `DISCORD_BOT_TOKEN`. Le reste de la configuration serveur est stocké en SQLite et administrable sans modifier `.env`.
 
 ## CI/CD et releases
 
@@ -74,7 +100,11 @@ sudo apt-get install libsodium-dev libssl-dev libsqlite3-dev pkg-config
 ./build.sh
 ```
 
-Voir la [matrice de couverture](FEATURE_MATRIX.md) pour distinguer les fonctionnalités livrées, les adaptateurs externes et les éléments encore en développement.
+Pour vérifier l’installation complète :
+
+```sh
+./check.sh
+```
 
 Commandes disponibles : commandes générales (`/help`, `/ping`, `/about`, `/hello`, `/echo`), jeux (`/roll`, `/coin`, `/8ball`, `/pfc pierre|feuille|ciseaux`, `/joke`, `/meme`, `/meme_add`, `/meme_remove`, `/meme_list`, `/quote`, `/riddle`, `/quiz`, `/challenge`, `/morpion`, `/compatibility`, `/choose`), vocal (`/voice create`, `/voice delete`), utilitaires (`/calc`, `/convert`, `/timestamp`, `/timezone`, `/password`, `/define`, `/qr`, `/weather`, `/remind`), informations (`/userinfo`, `/serverinfo`, `/roleinfo`, `/channelinfo`, `/avatar`), configuration ACL, rôles, signalements et modération.
 
@@ -107,9 +137,23 @@ Copier `.env.example` vers un fichier local non versionné et renseigner les val
 ./check.sh
 ```
 
-Voir [PRIVACY.md](PRIVACY.md) pour les données conservées et les précautions de déploiement.
-Voir [DEPLOYMENT.md](DEPLOYMENT.md) pour un déploiement systemd avec utilisateur dédié, reverse proxy HTTPS et restauration contrôlée.
-Voir [CONFIGURATION.md](CONFIGURATION.md) pour le catalogue complet des clés par serveur et la procédure ACL.
+### Sécurité et données
+
+- Ne jamais versionner `.env`, tokens, clés IA, webhooks ou bases SQLite de production.
+- Les clés contenant `token`, `secret`, `password`, `private`, `credential`, `api_key` ou `webhook` sont refusées côté commandes/dashboard lorsqu’elles ne doivent pas être exposées.
+- Les commandes sensibles sont auditées dans SQLite.
+- Les routes dashboard/admin exigent un secret dashboard suffisamment long.
+- Les données personnelles activées par le bot peuvent être exportées ou supprimées avec les commandes dédiées.
+- Les appels IA, traduction, météo, QR et intégrations externes peuvent transmettre le contenu demandé au fournisseur configuré.
+
+### Déploiement recommandé
+
+- utilisateur système dédié ;
+- reverse proxy HTTPS devant l’endpoint Discord ;
+- sauvegardes SQLite régulières avec `backup.sh` ;
+- restauration contrôlée avec `restore.sh` ;
+- surveillance via `/health` et `/metrics` ;
+- GitHub Actions vert avant mise en production.
 
 ## Mode SaaS pour hébergeurs
 
