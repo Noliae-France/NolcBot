@@ -23,6 +23,7 @@ jobs:
       DISCORD_TEST_GUILD_ID: ${{ secrets.DISCORD_TEST_GUILD_ID }}
       DISCORD_TEST_CHANNEL_ID: ${{ secrets.DISCORD_TEST_CHANNEL_ID }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NOLCBOT_MAX_RSS_MB: ${{ vars.NOLCBOT_MAX_RSS_MB }}
     steps:
       - uses: actions/checkout@v4
       - name: Installer les dépendances système

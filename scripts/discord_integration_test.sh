@@ -259,7 +259,7 @@ done
 
 section "Démarrage HTTP court du bot"
 set +e
-timeout 8s ./bot >"$work_dir/http.log" 2>&1
+env NOLIAE_DB_PATH="$NOLIAE_DB_PATH" /usr/bin/time -v timeout 8s ./bot >"$work_dir/http.log" 2>"$work_dir/http.time"
 http_rc=$?
 set -e
 if [ "$http_rc" -ne 0 ] && [ "$http_rc" -ne 124 ]; then
@@ -272,9 +272,23 @@ if ! rg -q "écoute|Clé publique|Port" "$work_dir/http.log"; then
 fi
 echo "HTTP: démarrage sans échec immédiat."
 
+http_max_rss_kb="$(awk -F: '/Maximum resident set size/ {gsub(/^[ \t]+/, "", $2); print $2}' "$work_dir/http.time" | tail -1)"
+http_cpu_percent="$(awk -F: '/Percent of CPU this job got/ {gsub(/^[ \t]+/, "", $2); print $2}' "$work_dir/http.time" | tail -1)"
+http_elapsed="$(awk -F: '/Elapsed .* wall clock/ {gsub(/^[ \t]+/, "", $2 ":" $3 ":" $4); print $2 ":" $3 ":" $4}' "$work_dir/http.time" | tail -1)"
+if [ -n "${http_max_rss_kb:-}" ]; then
+  http_max_rss_mb=$(( (http_max_rss_kb + 1023) / 1024 ))
+  echo "Perf HTTP: RAM max ${http_max_rss_mb} MiB (${http_max_rss_kb} KiB), CPU ${http_cpu_percent:-inconnu}, durée ${http_elapsed:-inconnue}."
+  if [ -n "${NOLCBOT_MAX_RSS_MB:-}" ] && [ "$http_max_rss_mb" -gt "$NOLCBOT_MAX_RSS_MB" ]; then
+    echo "::error::RAM max trop haute: ${http_max_rss_mb} MiB > ${NOLCBOT_MAX_RSS_MB} MiB"
+    exit 1
+  fi
+else
+  echo "::warning::Impossible de lire la RAM max du démarrage HTTP."
+fi
+
 section "Smoke Gateway Discord court"
 set +e
-timeout 20s ./bot gateway >"$work_dir/gateway.log" 2>&1
+env NOLIAE_DB_PATH="$NOLIAE_DB_PATH" /usr/bin/time -v timeout 20s ./bot gateway >"$work_dir/gateway.log" 2>"$work_dir/gateway.time"
 gateway_rc=$?
 set -e
 if [ "$gateway_rc" -ne 0 ] && [ "$gateway_rc" -ne 124 ]; then
@@ -283,6 +297,20 @@ if [ "$gateway_rc" -ne 0 ] && [ "$gateway_rc" -ne 124 ]; then
   exit 1
 fi
 echo "Gateway: connexion lancée sans échec immédiat."
+
+gateway_max_rss_kb="$(awk -F: '/Maximum resident set size/ {gsub(/^[ \t]+/, "", $2); print $2}' "$work_dir/gateway.time" | tail -1)"
+gateway_cpu_percent="$(awk -F: '/Percent of CPU this job got/ {gsub(/^[ \t]+/, "", $2); print $2}' "$work_dir/gateway.time" | tail -1)"
+gateway_elapsed="$(awk -F: '/Elapsed .* wall clock/ {gsub(/^[ \t]+/, "", $2 ":" $3 ":" $4); print $2 ":" $3 ":" $4}' "$work_dir/gateway.time" | tail -1)"
+if [ -n "${gateway_max_rss_kb:-}" ]; then
+  gateway_max_rss_mb=$(( (gateway_max_rss_kb + 1023) / 1024 ))
+  echo "Perf Gateway: RAM max ${gateway_max_rss_mb} MiB (${gateway_max_rss_kb} KiB), CPU ${gateway_cpu_percent:-inconnu}, durée ${gateway_elapsed:-inconnue}."
+  if [ -n "${NOLCBOT_MAX_RSS_MB:-}" ] && [ "$gateway_max_rss_mb" -gt "$NOLCBOT_MAX_RSS_MB" ]; then
+    echo "::error::RAM max trop haute: ${gateway_max_rss_mb} MiB > ${NOLCBOT_MAX_RSS_MB} MiB"
+    exit 1
+  fi
+else
+  echo "::warning::Impossible de lire la RAM max du Gateway."
+fi
 
 section "Tests fonctionnels non destructifs"
 sqlite3 "$NOLIAE_DB_PATH" <<SQL
@@ -385,4 +413,5 @@ fi
 
 section "Résumé"
 echo "Intégration Discord complète OK."
-echo "Bot, app, serveur, commandes, HTTP, Gateway, SQLite, modules, modération dry-run, IA et formulaires validés."
+echo "Bot, app, serveur, commandes, HTTP, Gateway, SQLite, modules, modération dry-run, IA, formulaires et actions Discord réelles validés."
+echo "Perf max observée: HTTP ${http_max_rss_mb:-?} MiB RAM / CPU ${http_cpu_percent:-?}; Gateway ${gateway_max_rss_mb:-?} MiB RAM / CPU ${gateway_cpu_percent:-?}."
