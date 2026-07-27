@@ -9,7 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/build.yml"><img alt="CI/CD" src="https://github.com/Noliae-France/NolcBot/actions/workflows/build.yml/badge.svg"></a>
+  <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Noliae-France/NolcBot/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/discord-integration.yml"><img alt="Discord integration" src="https://github.com/Noliae-France/NolcBot/actions/workflows/discord-integration.yml/badge.svg"></a>
   <a href="https://github.com/Noliae-France/NolcBot/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/Noliae-France/NolcBot?include_prereleases&label=release"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Platform" src="https://img.shields.io/badge/platform-linux-2ea44f"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Language" src="https://img.shields.io/badge/language-Nolc-5865f2"></a>
@@ -33,14 +34,13 @@ NolcBot est un bot Discord natif basé sur le client [`nolc-discord`](https://gi
 
 ## CI/CD et releases
 
-Le workflow GitHub Actions [`build-nolcbot`](.github/workflows/build.yml) tourne sur les push, pull requests et lancements manuels.
+La CI publique est découpée pour garder des checks GitHub propres :
 
 Pipeline :
 
-- `secret-scan` : vérifie qu’aucun token Discord, clé OpenAI, webhook, clé privée ou secret brut n’est versionné.
-- `build-linux` : installe Nolc, OpenSSL, libsodium et SQLite, puis lance `./check.sh`.
-- `discord-smoke` : job manuel (`workflow_dispatch`) qui utilise uniquement les **GitHub Secrets** pour tester SQLite, l’API Discord, l’application, le serveur de test, la présence du bot, l’enregistrement des commandes, une connexion Gateway courte et OpenAI si la clé est fournie.
-- `release` : sur tag `v*`, récupère les artefacts et crée une GitHub Release.
+- [`ci`](.github/workflows/ci.yml) : sur push et pull request, vérifie qu’aucun secret brut n’est versionné, installe Nolc, compile, teste et publie un artefact Linux.
+- [`discord-integration`](.github/workflows/discord-integration.yml) : lancement manuel uniquement, utilise les **GitHub Secrets** pour tester SQLite, l’API Discord, l’application, le serveur de test, la présence du bot, l’enregistrement des commandes, une connexion Gateway courte et OpenAI si la clé est fournie.
+- [`release`](.github/workflows/release.yml) : sur tag `v*`, recompile, reteste, prépare l’artefact Linux et crée une GitHub Release.
 
 Secrets GitHub attendus pour le smoke test Discord :
 

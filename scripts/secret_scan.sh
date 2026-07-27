@@ -13,7 +13,7 @@ fail=0
 scan() {
     label="$1"
     pattern="$2"
-    if xargs -0 rg -n --hidden -S -- "$pattern" <"$tmp"; then
+    if xargs -0 rg --no-messages -n --hidden -S -- "$pattern" <"$tmp"; then
         echo "Erreur: motif secret détecté: $label" >&2
         fail=1
     fi
@@ -35,7 +35,7 @@ scan "Google API key" 'AIza[0-9A-Za-z_\-]{35}'
 scan "AWS access key" 'AKIA[0-9A-Z]{16}'
 
 # Affectations dangereuses avec une valeur non vide et non placeholder.
-if xargs -0 rg -n --hidden -S -- '(TOKEN|SECRET|PASSWORD|API_KEY|CLIENT_SECRET|WEBHOOK_URL)[A-Z0-9_]*[[:space:]]*=[[:space:]]*["'\'']?[^"'\'']{8,}' <"$tmp" \
+if xargs -0 rg --no-messages -n --hidden -S -- '(TOKEN|SECRET|PASSWORD|API_KEY|CLIENT_SECRET|WEBHOOK_URL)[A-Z0-9_]*[[:space:]]*=[[:space:]]*["'\'']?[^"'\'']{8,}' <"$tmp" \
     | rg -v '^scripts/secret_scan\.sh:' \
     | rg -v '=[[:space:]]*["'\'']?(\.\.\.|xxx|XXX|changeme|CHANGE_ME|example|EXAMPLE|placeholder|PLACEHOLDER)|DISCORD_BOT_TOKEN=$|DISCORD_APP_ID=$'; then
     echo "Erreur: variable de secret non vide détectée." >&2
