@@ -185,9 +185,27 @@ section "Enregistrement des commandes slash"
 
 section "Enregistrement immédiat des commandes sur le serveur de test"
 ./bot commands-json >"$work_dir/commands_payload.json"
-guild_command_status="$(curl -sS -o "$work_dir/guild_commands_put.json" -w '%{http_code}' -X PUT -H "$auth_header" -H "Content-Type: application/json" --data-binary "@$work_dir/commands_payload.json" "$discord_api/applications/$DISCORD_APP_ID/guilds/$DISCORD_TEST_GUILD_ID/commands")"
+jq '[.[] | select(.name as $n | [
+  "ping","help","health","version","privacy",
+  "ban","kick","mute","warn","sanctions","clear","slowmode",
+  "ticket","ticket_add","ticket_remove","ticket_close",
+  "faq","faq_ai","community_event_ideas","community_announce_ai",
+  "balance","daily","weekly","work","shop","buy","inventory",
+  "roll","coin","8ball","pfc","quiz","riddle","meme","morpion",
+  "stats","stats_report","logs_csv",
+  "ai","ai_config","summarize","rewrite","ideas",
+  "rss","rss_subscribe","youtube_subscribe","twitch_subscribe","github_subscribe","reddit_subscribe",
+  "form_create","form_open","channel_edit","channel_sync_config"
+] | index($n))]' "$work_dir/commands_payload.json" >"$work_dir/commands_payload_ci.json"
+ci_command_count="$(jq 'length' "$work_dir/commands_payload_ci.json")"
+if [ "$ci_command_count" -lt 40 ] || [ "$ci_command_count" -gt 100 ]; then
+  echo "::error::Sous-ensemble de commandes CI invalide: $ci_command_count"
+  exit 1
+fi
+guild_command_status="$(curl -sS -o "$work_dir/guild_commands_put.json" -w '%{http_code}' -X PUT -H "$auth_header" -H "Content-Type: application/json" --data-binary "@$work_dir/commands_payload_ci.json" "$discord_api/applications/$DISCORD_APP_ID/guilds/$DISCORD_TEST_GUILD_ID/commands")"
 if [ "$guild_command_status" != "200" ] && [ "$guild_command_status" != "201" ]; then
   echo "::error::Enregistrement guild-scoped des commandes échoué (HTTP $guild_command_status)"
+  jq -r '.message? // . // empty' "$work_dir/guild_commands_put.json" | head -20
   if [ "$guild_command_status" = "403" ]; then
     echo "::error::Le bot n'a pas les droits nécessaires ou l'application n'est pas installée sur le serveur de test."
   fi
