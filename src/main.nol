@@ -791,6 +791,10 @@ fn main() {
     if not store_initialiser("noliae-discord.sqlite3") { print("Impossible d’ouvrir la base SQLite."); return }
     let _db_init = store_configurer("_system", "schema_version", "2")
     let a = args()
+    if len(a) >= 1 and get(a, 0) == "commands-json" {
+        print(commandes_json())
+        return
+    }
     if len(a) >= 2 and get(a, 0) == "setup-public-key" {
         let cle_publique = get(a, 1)
         if len(cle_publique) < 32 or not store_configurer("_system", "discord.public_key", cle_publique) {

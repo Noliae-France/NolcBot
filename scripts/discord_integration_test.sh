@@ -183,8 +183,19 @@ fi
 section "Enregistrement des commandes slash"
 ./bot register >/dev/null
 
-section "Vérification REST Discord: commandes globales enregistrées"
-discord_get "Lecture des commandes globales" "/applications/$DISCORD_APP_ID/commands" "$work_dir/commands.json"
+section "Enregistrement immédiat des commandes sur le serveur de test"
+./bot commands-json >"$work_dir/commands_payload.json"
+guild_command_status="$(curl -sS -o "$work_dir/guild_commands_put.json" -w '%{http_code}' -X PUT -H "$auth_header" -H "Content-Type: application/json" --data-binary "@$work_dir/commands_payload.json" "$discord_api/applications/$DISCORD_APP_ID/guilds/$DISCORD_TEST_GUILD_ID/commands")"
+if [ "$guild_command_status" != "200" ] && [ "$guild_command_status" != "201" ]; then
+  echo "::error::Enregistrement guild-scoped des commandes échoué (HTTP $guild_command_status)"
+  if [ "$guild_command_status" = "403" ]; then
+    echo "::error::Le bot n'a pas les droits nécessaires ou l'application n'est pas installée sur le serveur de test."
+  fi
+  exit 1
+fi
+
+section "Vérification REST Discord: commandes du serveur de test enregistrées"
+discord_get "Lecture des commandes du serveur de test" "/applications/$DISCORD_APP_ID/guilds/$DISCORD_TEST_GUILD_ID/commands" "$work_dir/commands.json"
 commands_json="$(cat "$work_dir/commands.json")"
 command_count="$(printf '%s' "$commands_json" | jq 'length')"
 if [ "$command_count" -lt 10 ]; then
