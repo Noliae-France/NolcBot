@@ -39,7 +39,7 @@ Pipeline :
 
 - `secret-scan` : vérifie qu’aucun token Discord, clé OpenAI, webhook, clé privée ou secret brut n’est versionné.
 - `build-linux` : installe Nolc, OpenSSL, libsodium et SQLite, puis lance `./check.sh`.
-- `discord-smoke` : job manuel (`workflow_dispatch`) qui utilise uniquement les **GitHub Secrets** pour tester l’initialisation Discord et l’enregistrement des commandes.
+- `discord-smoke` : job manuel (`workflow_dispatch`) qui utilise uniquement les **GitHub Secrets** pour tester SQLite, l’API Discord, l’application, le serveur de test, la présence du bot, l’enregistrement des commandes, une connexion Gateway courte et OpenAI si la clé est fournie.
 - `release` : sur tag `v*`, récupère les artefacts et crée une GitHub Release.
 
 Secrets GitHub attendus pour le smoke test Discord :
