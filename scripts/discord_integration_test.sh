@@ -109,6 +109,26 @@ discord_get() {
   fi
 }
 
+discord_request() {
+  local method="$1"
+  local label="$2"
+  local path="$3"
+  local payload="$4"
+  local out="$5"
+  local expected="$6"
+  local status
+  if [ -n "$payload" ]; then
+    status="$(curl -sS -o "$out" -w '%{http_code}' -X "$method" -H "$auth_header" -H "Content-Type: application/json" -d "$payload" "$discord_api$path")"
+  else
+    status="$(curl -sS -o "$out" -w '%{http_code}' -X "$method" -H "$auth_header" "$discord_api$path")"
+  fi
+  if ! printf '%s\n' "$expected" | grep -qx "$status"; then
+    echo "::error::$label a échoué côté Discord REST (HTTP $status)"
+    jq -r '.message? // . // empty' "$out" 2>/dev/null | head -20 || true
+    exit 1
+  fi
+}
+
 section "Initialisation SQLite et clé publique Discord"
 ./bot setup-public-key "$DISCORD_PUBLIC_KEY" >/dev/null
 stored_key="$(sqlite3 "$NOLIAE_DB_PATH" "SELECT value FROM guild_config WHERE guild_id='_system' AND key='discord.public_key';")"
@@ -294,6 +314,62 @@ if [ -n "${DISCORD_TEST_CHANNEL_ID:-}" ]; then
 else
   echo "DISCORD_TEST_CHANNEL_ID absent: test d'envoi message ignoré."
 fi
+
+section "Actions réelles Discord sur serveur de test"
+ci_suffix="$(date +%s)"
+channel_name="nolcbot-ci-${ci_suffix}"
+role_name="NolcBot CI ${ci_suffix}"
+
+created_channel_id=""
+created_role_id=""
+
+cleanup_discord_actions() {
+  set +e
+  if [ -n "$created_role_id" ]; then
+    curl -sS -o /dev/null -X DELETE -H "$auth_header" "$discord_api/guilds/$DISCORD_TEST_GUILD_ID/roles/$created_role_id" >/dev/null 2>&1
+  fi
+  if [ -n "$created_channel_id" ]; then
+    curl -sS -o /dev/null -X DELETE -H "$auth_header" "$discord_api/channels/$created_channel_id" >/dev/null 2>&1
+  fi
+}
+trap cleanup_discord_actions EXIT
+
+channel_payload="$(jq -nc --arg name "$channel_name" '{name:$name,type:0,topic:"Salon temporaire créé par NolcBot CI"}')"
+discord_request "POST" "Création du salon temporaire" "/guilds/$DISCORD_TEST_GUILD_ID/channels" "$channel_payload" "$work_dir/create_channel.json" "200
+201"
+created_channel_id="$(jq -r '.id // empty' "$work_dir/create_channel.json")"
+if [ -z "$created_channel_id" ]; then
+  echo "::error::Discord n'a pas renvoyé l'ID du salon temporaire"
+  exit 1
+fi
+echo "OK: salon temporaire créé."
+
+message_payload="$(jq -nc --arg content "✅ NolcBot CI: action réelle Discord OK. Salon temporaire créé, message envoyé, nettoyage automatique prévu." '{content:$content}')"
+discord_request "POST" "Envoi du message dans le salon temporaire" "/channels/$created_channel_id/messages" "$message_payload" "$work_dir/action_message.json" "200
+201"
+echo "OK: message envoyé dans le salon temporaire."
+
+patch_channel_payload="$(jq -nc '{topic:"NolcBot CI a modifié ce salon temporaire avant nettoyage."}')"
+discord_request "PATCH" "Modification du salon temporaire" "/channels/$created_channel_id" "$patch_channel_payload" "$work_dir/patch_channel.json" "200"
+echo "OK: salon temporaire modifié."
+
+role_payload="$(jq -nc --arg name "$role_name" '{name:$name,mentionable:false,hoist:false,permissions:"0"}')"
+discord_request "POST" "Création du rôle temporaire" "/guilds/$DISCORD_TEST_GUILD_ID/roles" "$role_payload" "$work_dir/create_role.json" "200
+201"
+created_role_id="$(jq -r '.id // empty' "$work_dir/create_role.json")"
+if [ -z "$created_role_id" ]; then
+  echo "::error::Discord n'a pas renvoyé l'ID du rôle temporaire"
+  exit 1
+fi
+echo "OK: rôle temporaire créé."
+
+discord_request "DELETE" "Suppression du rôle temporaire" "/guilds/$DISCORD_TEST_GUILD_ID/roles/$created_role_id" "" "$work_dir/delete_role.json" "204"
+created_role_id=""
+echo "OK: rôle temporaire supprimé."
+
+discord_request "DELETE" "Suppression du salon temporaire" "/channels/$created_channel_id" "" "$work_dir/delete_channel.json" "200"
+created_channel_id=""
+echo "OK: salon temporaire supprimé."
 
 if [ -n "${OPENAI_API_KEY:-}" ]; then
   section "Vérification OpenAI optionnelle"
