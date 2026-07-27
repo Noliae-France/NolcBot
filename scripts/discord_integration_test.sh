@@ -70,7 +70,7 @@ if [ "$stored_key" != "$DISCORD_PUBLIC_KEY" ]; then
   exit 1
 fi
 
-assert_sql_count "tables SQLite" "SELECT count(*) FROM sqlite_master WHERE type='table';" 10
+assert_sql_count "tables SQLite" "SELECT count(*) FROM sqlite_master WHERE type='table';" 6
 assert_sql_count "schéma SQLite version 2" "SELECT count(*) FROM guild_config WHERE guild_id='_system' AND key='schema_version' AND value='2';" 1
 for table in guild_config audit_log reminders rss_subscriptions twitch_subscriptions invite_cache; do
   assert_sql_count "table $table" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='$table';" 1
