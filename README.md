@@ -15,6 +15,8 @@
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Platform" src="https://img.shields.io/badge/platform-linux-2ea44f"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Language" src="https://img.shields.io/badge/language-Nolc-5865f2"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Security" src="https://img.shields.io/badge/secrets-scanned-success"></a>
+  <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/discord-integration.yml"><img alt="Memory" src="https://img.shields.io/badge/RAM%20max%20CI-97%20MiB-00b894"></a>
+  <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/discord-integration.yml"><img alt="CPU" src="https://img.shields.io/badge/CPU%20Gateway-1%25-00b894"></a>
 </p>
 
 <p align="center">
@@ -44,6 +46,17 @@ NolcBot veut rester simple à héberger, mais sérieux techniquement : un bot mo
 | 🧰 Utilitaires | profils, serveur, rôles, salons, avatar, QR, météo, traduction, rappels, timestamps |
 | 🎲 Jeux & fun | dés, pile ou face, 8-ball, quiz, devinettes, memes, morpion, compatibilité |
 | 📊 Observabilité | `/health`, `/metrics`, audit SQLite, rapports stats, artefacts CI |
+
+## 🪶 Ultra léger
+
+NolcBot est compilé en binaire natif Nolc : pas de runtime Node.js, pas de VM lourde, pas de framework géant embarqué. Le workflow `discord-integration` mesure la consommation réelle pendant un démarrage HTTP et une connexion Gateway Discord courte.
+
+| Mode testé en CI | RAM max observée | CPU observé | Durée du test |
+| --- | ---: | ---: | ---: |
+| HTTP interactions | **6 MiB** | **0 %** | 8 s |
+| Gateway Discord | **97 MiB** | **1 %** | 20 s |
+
+Ces chiffres viennent du dernier run GitHub Actions d’intégration Discord avec `/usr/bin/time -v`. Le plafond RAM peut être rendu bloquant avec la variable GitHub `NOLCBOT_MAX_RSS_MB`.
 
 ## 🧱 Architecture rapide
 
