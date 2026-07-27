@@ -23,32 +23,20 @@ jobs:
         run: ./scripts/secret_scan.sh
 
   build:
-    name: build-${{ matrix.os }}
+    name: build-linux
     needs: secret-scan
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-13]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Installer les dépendances système
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt-get update
-            sudo apt-get install -y libsodium-dev libssl-dev libsqlite3-dev sqlite3 pkg-config ripgrep
-          else
-            brew install openssl@3 libsodium sqlite ripgrep
-          fi
+          sudo apt-get update
+          sudo apt-get install -y libsodium-dev libssl-dev libsqlite3-dev sqlite3 pkg-config ripgrep
       - name: Installer Nolc
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            archive="https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-linux-x86_64.tar.gz"
-          else
-            archive="https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-darwin-x86_64.tar.gz"
-          fi
+          archive="https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-linux-x86_64.tar.gz"
           curl -fsSL "$archive" | tar -xz
           find . -type f -name nolc -exec sudo install -m 0755 {} /usr/local/bin/nolc \;
       - name: Vérifier, tester et compiler
@@ -63,9 +51,50 @@ jobs:
           shasum -a 256 "dist/nolcbot-${suffix}" > "dist/nolcbot-${suffix}.sha256"
       - uses: actions/upload-artifact@v4
         with:
-          name: nolcbot-${{ runner.os }}
+          name: nolcbot-linux
           path: dist/*
           if-no-files-found: error
+
+  discord-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_APP_ID: ${{ secrets.DISCORD_APP_ID }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
+      DISCORD_CLIENT_ID: ${{ secrets.DISCORD_CLIENT_ID }}
+      DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
+      DISCORD_TEST_GUILD_ID: ${{ secrets.DISCORD_TEST_GUILD_ID }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer les dépendances système
+        run: sudo apt-get update && sudo apt-get install -y libsodium-dev libssl-dev libsqlite3-dev sqlite3 pkg-config ripgrep
+      - name: Installer Nolc
+        run: |
+          curl -fsSL https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-linux-x86_64.tar.gz | tar -xz
+          find . -type f -name nolc -exec sudo install -m 0755 {} /usr/local/bin/nolc \;
+      - name: Vérifier les secrets GitHub requis
+        shell: bash
+        run: |
+          missing=0
+          for name in DISCORD_APP_ID DISCORD_BOT_TOKEN DISCORD_PUBLIC_KEY DISCORD_TEST_GUILD_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name manquant dans GitHub Secrets"
+              missing=1
+            fi
+          done
+          exit "$missing"
+      - name: Compiler le bot
+        run: ./check.sh
+      - name: Initialiser la clé publique Discord en SQLite
+        run: |
+          smoke_dir="$(mktemp -d)"
+          NOLIAE_DB_PATH="$smoke_dir/nolcbot.sqlite3" ./bot setup-public-key "$DISCORD_PUBLIC_KEY"
+          test "$(sqlite3 "$smoke_dir/nolcbot.sqlite3" "SELECT value FROM guild_config WHERE guild_id='_system' AND key='discord.public_key';")" = "$DISCORD_PUBLIC_KEY"
+      - name: Smoke test API Discord
+        run: ./bot register
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

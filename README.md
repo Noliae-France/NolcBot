@@ -1,15 +1,73 @@
-# Bot Discord Noliae en Nolc
+<p align="center">
+  <img src="assets/nolcbot-logo.png" alt="NolcBot logo" width="180">
+</p>
 
-Bot Discord natif écrit en Nolc, basé sur le client [`nolc-discord`](https://github.com/Noliae-France/nolc-discord).
+<h1 align="center">NolcBot</h1>
 
-## Build macOS et Linux
+<p align="center">
+  Bot Discord modulaire écrit en <strong>Nolc</strong>, pensé pour les communautés sérieuses, les admins exigeants et les hébergeurs.
+</p>
 
-`./build.sh` détecte macOS (Homebrew) et Linux (`pkg-config` ou chemins système). Dépendances requises : Nolc, OpenSSL 3, libsodium et SQLite3.
+<p align="center">
+  <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/build.yml"><img alt="CI/CD" src="https://github.com/Noliae-France/NolcBot/actions/workflows/build.yml/badge.svg"></a>
+  <a href="https://github.com/Noliae-France/NolcBot/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/Noliae-France/NolcBot?include_prereleases&label=release"></a>
+  <a href="https://github.com/Noliae-France/NolcBot"><img alt="Platform" src="https://img.shields.io/badge/platform-linux-2ea44f"></a>
+  <a href="https://github.com/Noliae-France/NolcBot"><img alt="Language" src="https://img.shields.io/badge/language-Nolc-5865f2"></a>
+  <a href="https://github.com/Noliae-France/NolcBot"><img alt="Security" src="https://img.shields.io/badge/secrets-scanned-success"></a>
+</p>
+
+---
+
+NolcBot est un bot Discord natif basé sur le client [`nolc-discord`](https://github.com/Noliae-France/nolc-discord). Il vise une architecture propre : core léger, commandes par modules, configuration persistée en base, dashboard web, audit, automatisations, intégrations et assistants IA avec confirmation humaine pour les actions sensibles.
+
+> L’édition de ce dépôt est le mode **OSS / self-host**. Le mode **SaaS** commercial avec licences payantes est décrit plus bas comme architecture cible séparée.
+
+## Points forts
+
+- **Modules séparés** : modération, tickets, communauté, économie, jeux, statistiques, utilitaires, IA, intégrations, salons et formulaires.
+- **Configuration sans `.env` métier** : le token Discord et l’App ID restent en environnement ; les rôles, salons, ACL, modules et réglages serveur vivent en SQLite.
+- **Dashboard web** : configuration multi-serveurs, modules, overlays stream, métriques et routes admin protégées.
+- **Sécurité** : audit SQLite, scan anti-secrets en CI, refus des clés sensibles dans les commandes/dashboard, données personnelles exportables/supprimables.
+- **CI/CD public** : build Linux, tests Nolc, smoke SQLite, scan anti-secrets, artefacts de build et publication automatique sur tags `v*`.
+- **IA optionnelle** : OpenAI/ChatGPT, Gemini et Mistral via clés serveur configurables, avec limites d’usage.
+
+## CI/CD et releases
+
+Le workflow GitHub Actions [`build-nolcbot`](.github/workflows/build.yml) tourne sur les push, pull requests et lancements manuels.
+
+Pipeline :
+
+- `secret-scan` : vérifie qu’aucun token Discord, clé OpenAI, webhook, clé privée ou secret brut n’est versionné.
+- `build-linux` : installe Nolc, OpenSSL, libsodium et SQLite, puis lance `./check.sh`.
+- `discord-smoke` : job manuel (`workflow_dispatch`) qui utilise uniquement les **GitHub Secrets** pour tester l’initialisation Discord et l’enregistrement des commandes.
+- `release` : sur tag `v*`, récupère les artefacts et crée une GitHub Release.
+
+Secrets GitHub attendus pour le smoke test Discord :
+
+| Secret GitHub | Usage |
+| --- | --- |
+| `DISCORD_APP_ID` | Identifiant d’application Discord |
+| `DISCORD_BOT_TOKEN` | Token du bot, masqué par GitHub Actions |
+| `DISCORD_PUBLIC_KEY` | Clé publique Discord injectée dans SQLite pendant le test |
+| `DISCORD_TEST_GUILD_ID` | Serveur Discord de test |
+| `DISCORD_CLIENT_ID` | OAuth2, futur dashboard complet |
+| `DISCORD_CLIENT_SECRET` | OAuth2, futur dashboard complet |
+| `OPENAI_API_KEY` | Tests IA optionnels |
+
+Ne jamais écrire ces valeurs dans le repo, dans les logs, dans le README ou dans un fichier `.env` versionné. Si une clé a été partagée en clair, elle doit être régénérée avant usage.
+
+Créer une release :
 
 ```sh
-# macOS
-brew install openssl@3 libsodium sqlite
+git tag v0.1.0
+git push origin v0.1.0
+```
 
+## Build Linux
+
+`./build.sh` détecte Linux (`pkg-config` ou chemins système). Dépendances requises : Nolc, OpenSSL 3, libsodium et SQLite3.
+
+```sh
 # Debian / Ubuntu
 sudo apt-get install libsodium-dev libssl-dev libsqlite3-dev pkg-config
 
