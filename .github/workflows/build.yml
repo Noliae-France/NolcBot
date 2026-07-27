@@ -1,19 +1,84 @@
-name: build-noliae-discord
+name: build-nolcbot
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nolcbot-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  secret-scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Installer ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Vérifier l'absence de secrets
+        run: ./scripts/secret_scan.sh
+
+  build:
+    name: build-${{ matrix.os }}
+    needs: secret-scan
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13]
+    steps:
+      - uses: actions/checkout@v4
       - name: Installer les dépendances système
-        run: sudo apt-get update && sudo apt-get install -y libsodium-dev libssl-dev libsqlite3-dev sqlite3
-      - name: Installer Nolc
+        shell: bash
         run: |
-          curl -fsSL https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-linux-x86_64.tar.gz | tar -xz
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y libsodium-dev libssl-dev libsqlite3-dev sqlite3 pkg-config ripgrep
+          else
+            brew update
+            brew install openssl@3 libsodium sqlite ripgrep
+          fi
+      - name: Installer Nolc
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            archive="https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-linux-x86_64.tar.gz"
+          else
+            archive="https://noliae-nolc.s3.gra.io.cloud.ovh.net/nolc-latest-darwin-x86_64.tar.gz"
+          fi
+          curl -fsSL "$archive" | tar -xz
           find . -type f -name nolc -exec sudo install -m 0755 {} /usr/local/bin/nolc \;
       - name: Vérifier, tester et compiler
         run: ./check.sh
+      - name: Préparer l'artefact
+        shell: bash
+        run: |
+          mkdir -p dist
+          suffix="$RUNNER_OS"
+          cp bot "dist/nolcbot-${suffix}"
+          chmod +x "dist/nolcbot-${suffix}"
+          shasum -a 256 "dist/nolcbot-${suffix}" > "dist/nolcbot-${suffix}.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nolcbot-${{ runner.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
