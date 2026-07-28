@@ -81,9 +81,15 @@ La CI publique est découpée pour garder des checks GitHub propres : `ci` est l
 
 Pipeline :
 
-- [`ci`](.github/workflows/ci.yml) : sur push et pull request, vérifie qu’aucun secret brut n’est versionné, installe Nolc, compile, teste, publie un artefact Linux brut et prépare un paquet `nolcbot-linux-release-preview` prêt à télécharger.
+- [`ci`](.github/workflows/ci.yml) : sur push et pull request, vérifie qu’aucun secret brut n’est versionné, installe Nolc, compile, teste, publie un artefact Linux brut et prépare un paquet `nolcbot-linux-release-preview` pour valider le packaging avant release.
 - [`discord-integration`](.github/workflows/discord-integration.yml) : lancement manuel uniquement, non bloquant pour les push/PR. Il utilise les **GitHub Secrets** pour tester SQLite, l’API Discord, l’application, le serveur de test, la présence du bot, l’enregistrement des commandes, une connexion Gateway courte, les actions Discord réelles, la mesure RAM/CPU et OpenAI si la clé est fournie.
 - [`release`](.github/workflows/release.yml) : sur tag `v*`, recompile, reteste, prépare l’artefact Linux et crée une GitHub Release.
+
+📦 Dernière release publiée :
+
+- [`v0.1.0`](https://github.com/Noliae-France/NolcBot/releases/tag/v0.1.0)
+- Asset Linux : `nolcbot-linux`
+- Checksum : `nolcbot-linux.sha256`
 
 🔐 Secrets GitHub attendus pour le smoke test Discord :
 
@@ -102,8 +108,8 @@ Ne jamais écrire ces valeurs dans le repo, dans les logs, dans le README ou dan
 🏷️ Créer une release :
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag -a v0.2.0 -m "NolcBot v0.2.0"
+git push origin v0.2.0
 ```
 
 ## 🐧 Build Linux
