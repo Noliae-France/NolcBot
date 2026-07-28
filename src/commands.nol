@@ -1770,3 +1770,34 @@ fn commandes_json() -> Text {
         + ", {\"name\":\"clear\",\"description\":\"Supprimer un ou plusieurs messages récents\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"message\",\"description\":\"ID du message si quantite vaut 1\",\"required\":false},{\"type\":4,\"name\":\"quantite\",\"description\":\"2 à 100 messages récents\",\"required\":false}]}"
         + "]"
 }
+
+fn commandes_json_limite_discord(source: Text, limite: Int) -> Text {
+    var sortie = "["
+    var profondeur = 0
+    var debut = -1
+    var total = 0
+    var i = 0
+    while i < len(source) and total < limite {
+        let c = sub(source, i, 1)
+        if c == "{" {
+            if profondeur == 0 { debut = i }
+            profondeur = profondeur + 1
+        }
+        if c == "}" {
+            profondeur = profondeur - 1
+            if profondeur == 0 and debut >= 0 {
+                if total > 0 { sortie += "," }
+                sortie += sub(source, debut, i - debut + 1)
+                total = total + 1
+                debut = -1
+            }
+        }
+        i = i + 1
+    }
+    sortie += "]"
+    return sortie
+}
+
+fn commandes_json_discord() -> Text {
+    return commandes_json_limite_discord(commandes_json(), 100)
+}

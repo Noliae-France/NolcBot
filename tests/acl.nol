@@ -14,4 +14,10 @@ fn test_listes_exactes() {
     assert(not liste_ids_contient("", "123"), "liste vide refusée")
 }
 
+fn test_permission_discord_admin() {
+    assert(permission_discord_admin("{\"member\":{\"permissions\":\"8\"}}"), "bit administrateur accepté")
+    assert(permission_discord_admin("{\"member\":{\"permissions\":\"40\"}}"), "bit administrateur accepté avec autres permissions")
+    assert(not permission_discord_admin("{\"member\":{\"permissions\":\"32\"}}"), "permission non admin refusée")
+}
+
 fn main() {}

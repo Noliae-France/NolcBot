@@ -863,6 +863,10 @@ fn main() {
         print(commandes_json())
         return
     }
+    if len(a) >= 1 and get(a, 0) == "commands-json-discord" {
+        print(commandes_json_discord())
+        return
+    }
     if len(a) >= 2 and get(a, 0) == "setup-public-key" {
         let cle_publique = get(a, 1)
         if len(cle_publique) < 32 or not store_configurer("_system", "discord.public_key", cle_publique) {
@@ -875,7 +879,7 @@ fn main() {
     if len(a) >= 1 and get(a, 0) == "register" {
         let app = env("DISCORD_APP_ID")
         let tok = env("DISCORD_BOT_TOKEN")
-        if has(app) and has(tok) and discord_enregistrer_commandes(unwrap_or(app, ""), unwrap_or(tok, ""), commandes_json()) {
+        if has(app) and has(tok) and discord_enregistrer_commandes(unwrap_or(app, ""), unwrap_or(tok, ""), commandes_json_discord()) {
             print("✅ Commandes enregistrées.")
         } else { print("❌ DISCORD_APP_ID/DISCORD_BOT_TOKEN requis ou enregistrement échoué.") }
         return

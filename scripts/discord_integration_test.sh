@@ -204,15 +204,15 @@ section "Enregistrement des commandes slash"
 ./bot register >/dev/null
 
 section "Enregistrement immédiat des commandes sur le serveur de test"
-./bot commands-json >"$work_dir/commands_payload.json"
+./bot commands-json-discord >"$work_dir/commands_payload.json"
 cp "$work_dir/commands_payload.json" "$work_dir/commands_payload_ci.json"
 jq -r '.[].name' "$work_dir/commands_payload_ci.json" >"$work_dir/commands_expected.txt"
 ci_command_count="$(wc -l < "$work_dir/commands_expected.txt" | tr -d ' ')"
-if [ "$ci_command_count" -lt 100 ]; then
-  echo "::error::Liste complète de commandes CI invalide: $ci_command_count"
+if [ "$ci_command_count" -lt 90 ] || [ "$ci_command_count" -gt 100 ]; then
+  echo "::error::Liste de commandes Discord invalide: $ci_command_count"
   exit 1
 fi
-echo "Commandes slash à enregistrer sur le serveur de test: $ci_command_count"
+echo "Commandes slash registrables Discord à enregistrer sur le serveur de test: $ci_command_count"
 guild_command_status="$(curl -sS -o "$work_dir/guild_commands_put.json" -w '%{http_code}' -X PUT -H "$auth_header" -H "Content-Type: application/json" --data-binary "@$work_dir/commands_payload_ci.json" "$discord_api/applications/$DISCORD_APP_ID/guilds/$DISCORD_TEST_GUILD_ID/commands")"
 if [ "$guild_command_status" != "200" ] && [ "$guild_command_status" != "201" ]; then
   echo "::error::Enregistrement guild-scoped des commandes échoué (HTTP $guild_command_status)"

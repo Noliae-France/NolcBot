@@ -279,6 +279,8 @@ Enregistrer les commandes :
 DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... ./bot register
 ```
 
+Discord limite les commandes slash d’une application à **100 commandes par scope**. NolcBot garde un catalogue interne plus large, mais `./bot register` publie un lot Discord compatible via `./bot commands-json-discord`; les commandes d’administration critiques, dont `/update_check` et `/update_plan`, sont incluses dans ce lot.
+
 Démarrer l’endpoint d’interactions :
 
 ```sh

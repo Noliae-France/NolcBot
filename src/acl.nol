@@ -20,6 +20,13 @@ fn role_discord_present(corps: Text, role_id: Text) -> Bool {
     return false
 }
 
+fn permission_discord_admin(corps: Text) -> Bool {
+    let permissions = json_chemin_texte(corps, "member.permissions")
+    if not has(permissions) { return false }
+    let valeur = unwrap_or(parse_int(unwrap_or(permissions, "0")), 0)
+    return bit_and(valeur, 8) == 8
+}
+
 fn acl_groupe_verifie(corps: Text, guild: Text, groupe: Text, permission: Text) -> Bool {
     let active = store_lire(guild, "acl.group." + groupe + ".permission." + permission)
     let role = store_lire(guild, "acl.group." + groupe + ".role")
@@ -113,5 +120,6 @@ fn acl_maintenance_serveur(corps: Text) -> Bool {
 }
 
 fn acl_admin(corps: Text) -> Bool {
+    if permission_discord_admin(corps) { return true }
     return acl_autorise(corps, "admin")
 }
