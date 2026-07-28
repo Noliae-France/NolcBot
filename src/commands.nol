@@ -1469,22 +1469,56 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     }
     if nom == "userinfo" or nom == "user" {
         let cible = json_chemin_texte(req.corps, "data.options.0.value")
-        var nom_utilisateur = unwrap_or(json_chemin_texte(req.corps, "member.user.global_name"), unwrap_or(json_chemin_texte(req.corps, "member.user.username"), "inconnu"))
+        var nom_utilisateur = unwrap_or(json_chemin_texte(req.corps, "member.user.global_name"), unwrap_or(json_chemin_texte(req.corps, "member.user.username"), "Utilisateur Discord"))
+        var pseudo = unwrap_or(json_chemin_texte(req.corps, "member.nick"), "")
         var identifiant = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "inconnu")
-        if has(cible) { identifiant = unwrap_or(cible, identifiant); nom_utilisateur = "Membre ciblé" }
+        if has(cible) {
+            identifiant = unwrap_or(cible, identifiant)
+            nom_utilisateur = unwrap_or(json_chemin_texte(req.corps, "data.resolved.users." + identifiant + ".global_name"), unwrap_or(json_chemin_texte(req.corps, "data.resolved.users." + identifiant + ".username"), "Utilisateur Discord"))
+            pseudo = unwrap_or(json_chemin_texte(req.corps, "data.resolved.members." + identifiant + ".nick"), "")
+            let tok_userinfo = env("DISCORD_BOT_TOKEN")
+            let guild_userinfo = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+            if (nom_utilisateur == "Utilisateur Discord" or pseudo == "") and has(tok_userinfo) and guild_userinfo != "" {
+                let membre_json = discord_lire_membre(unwrap_or(tok_userinfo, ""), guild_userinfo, identifiant)
+                if has(membre_json) {
+                    let brut_membre = unwrap_or(membre_json, "")
+                    nom_utilisateur = unwrap_or(json_chemin_texte(brut_membre, "user.global_name"), unwrap_or(json_chemin_texte(brut_membre, "user.username"), nom_utilisateur))
+                    pseudo = unwrap_or(json_chemin_texte(brut_membre, "nick"), pseudo)
+                }
+            }
+        }
+        var ligne_pseudo = ""
+        if pseudo != "" { ligne_pseudo = "│ **Pseudo serveur** " + pseudo + "\n" }
         return discord_reponse_ephemere(carte_nolcbot("👤", "Utilisateur",
             "│ **Nom** " + nom_utilisateur + "\n"
+            + ligne_pseudo
             + ligne_carte("ID", identifiant)))
     }
     if nom == "serverinfo" {
         let serveur = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "inconnu")
-        let nom_serveur = unwrap_or(json_chemin_texte(req.corps, "guild.name"), "Serveur Discord")
+        var nom_serveur = unwrap_or(json_chemin_texte(req.corps, "guild.name"), "")
         let membre = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "inconnu")
-        let compteur = unwrap_or(json_chemin_texte(req.corps, "guild.member_count"), "inconnu")
-        return discord_reponse_ephemere(carte_nolcbot("🏠", "Serveur Discord",
+        var compteur = unwrap_or(json_chemin_texte(req.corps, "guild.member_count"), "")
+        var presence = ""
+        let tok_serverinfo = env("DISCORD_BOT_TOKEN")
+        if has(tok_serverinfo) and serveur != "" and serveur != "inconnu" {
+            let serveur_json = discord_lire_serveur(unwrap_or(tok_serverinfo, ""), serveur)
+            if has(serveur_json) {
+                let brut_serveur = unwrap_or(serveur_json, "")
+                nom_serveur = unwrap_or(json_chemin_texte(brut_serveur, "name"), nom_serveur)
+                compteur = text(unwrap_or(json_chemin_int(brut_serveur, "approximate_member_count"), unwrap_or(parse_int(compteur), 0)))
+                presence = text(unwrap_or(json_chemin_int(brut_serveur, "approximate_presence_count"), 0))
+            }
+        }
+        if nom_serveur == "" { nom_serveur = "Serveur Discord" }
+        if compteur == "" or compteur == "0" { compteur = "inconnu" }
+        var ligne_presence = ""
+        if presence != "" and presence != "0" { ligne_presence = ligne_carte("En ligne approx.", presence) }
+        return discord_reponse_ephemere(carte_nolcbot("🏠", nom_serveur,
             "│ **Nom** " + nom_serveur + "\n"
             + ligne_carte("ID", serveur)
             + ligne_carte("Membres", compteur)
+            + ligne_presence
             + "│ **Requêteur** <@" + membre + ">\n"))
     }
     if nom == "roleinfo" {

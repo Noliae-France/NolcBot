@@ -262,6 +262,27 @@ fn discord_lister_invitations(token: Text, guild: Text) -> Option<Text> {
     return some(sortie)
 }
 
+fn discord_corps_reponse(reponse: Text) -> Option<Text> {
+    let separateur = find(reponse, "\r\n\r\n")
+    if not has(separateur) { return none }
+    let debut = unwrap_or(separateur, 0) + 4
+    return some(sub(reponse, debut, len(reponse) - debut))
+}
+
+fn discord_lire_serveur(token: Text, guild: Text) -> Option<Text> {
+    if token == "" or guild == "" { return none }
+    let rep = discord_rest("GET", "/api/v10/guilds/" + guild + "?with_counts=true", token, "")
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 200 { return none }
+    return discord_corps_reponse(unwrap_or(rep, ""))
+}
+
+fn discord_lire_membre(token: Text, guild: Text, user: Text) -> Option<Text> {
+    if token == "" or guild == "" or user == "" { return none }
+    let rep = discord_rest("GET", "/api/v10/guilds/" + guild + "/members/" + user, token, "")
+    if not has(rep) or http_statut(unwrap_or(rep, "")) != 200 { return none }
+    return discord_corps_reponse(unwrap_or(rep, ""))
+}
+
 // Crée un salon privé de support. Les identifiants sont contrôlés par Discord;
 // le bot ne fabrique jamais de permission à partir d'un nom fourni par l'utilisateur.
 fn discord_creer_ticket(req: Requete, sujet: Text) -> Bool {
