@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+sh -n scripts/update_from_github.sh
 nolc pkg install
 nolc check .
 nolc check tests/time.nol

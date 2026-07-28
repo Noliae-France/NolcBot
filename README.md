@@ -112,6 +112,39 @@ git tag -a v0.2.0 -m "NolcBot v0.2.0"
 git push origin v0.2.0
 ```
 
+## 🔄 Mises à jour GitHub
+
+NolcBot sait vérifier les releases GitHub depuis Discord :
+
+- `/update_check` compare la version locale avec la dernière release publiée sur [`Noliae-France/NolcBot`](https://github.com/Noliae-France/NolcBot/releases) ;
+- `/update_plan` affiche la procédure serveur sécurisée pour les admins.
+
+La mise à jour réelle du binaire se fait côté serveur avec checksum et backup :
+
+```sh
+./scripts/update_from_github.sh
+```
+
+Variables optionnelles :
+
+| Variable | Défaut | Usage |
+| --- | --- | --- |
+| `NOLCBOT_VERSION` | `v0.2.0-dev` | Version affichée par `/version` et `/update_check` |
+| `NOLCBOT_UPDATE_REPO` | `Noliae-France/NolcBot` | Dépôt GitHub source des releases |
+| `NOLCBOT_UPDATE_ASSET` | `nolcbot-linux` | Asset Linux à installer |
+| `NOLCBOT_INSTALL_PATH` | `./bot` | Chemin du binaire à remplacer |
+| `NOLCBOT_SYSTEMD_SERVICE` | vide | Service systemd à redémarrer après installation |
+
+Exemple prod :
+
+```sh
+NOLCBOT_INSTALL_PATH=/opt/nolcbot/bot \
+NOLCBOT_SYSTEMD_SERVICE=nolcbot.service \
+./scripts/update_from_github.sh
+```
+
+Le script refuse l’installation si `nolcbot-linux.sha256` ne correspond pas au binaire téléchargé. Le bot ne s’auto-remplace pas directement depuis une commande Discord : c’est volontaire, pour éviter qu’une commande compromise puisse exécuter du code distant sans contrôle serveur.
+
 ## 🐧 Build Linux
 
 `./build.sh` détecte Linux (`pkg-config` ou chemins système). Dépendances requises : Nolc, OpenSSL 3, libsodium et SQLite3.

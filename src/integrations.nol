@@ -51,6 +51,46 @@ fn integration_http_statut(reponse: Text) -> Int {
     return unwrap_or(parse_int(sub(reste, 0, fin)), -1)
 }
 
+fn integration_https_get(hote: Text, chemin: Text, agent: Text) -> Option<Text> {
+    if hote == "" or chemin == "" or not starts_with(chemin, "/") { return none }
+    let fdo = tcp_connect(hote, 443)
+    if not has(fdo) { return none }
+    let fd = unwrap_or(fdo, -1)
+    tcp_set_timeout(fd, 7000)
+    let ctxo = tls_client_contexte()
+    if not has(ctxo) { tcp_close(fd); return none }
+    let sslo = tls_connecter(unwrap_or(ctxo, ptr_null()), fd, hote)
+    if not has(sslo) { tcp_close(fd); return none }
+    let ssl = unwrap_or(sslo, ptr_null())
+    let _n = tls_ecrire(ssl, "GET " + chemin + " HTTP/1.1\r\nHost: " + hote + "\r\nAccept: application/vnd.github+json\r\nUser-Agent: " + agent + "\r\nConnection: close\r\n\r\n")
+    var rep = ""
+    var lectures = 0
+    while lectures < 128 {
+        let morceau = tls_lire(ssl)
+        if morceau == "" { break }
+        rep += morceau
+        lectures = lectures + 1
+    }
+    tls_fermer(ssl)
+    tcp_close(fd)
+    if integration_http_statut(rep) < 200 or integration_http_statut(rep) >= 300 { return none }
+    let sep = find(rep, "\r\n\r\n")
+    if not has(sep) { return none }
+    let debut = unwrap_or(sep, 0) + 4
+    return some(sub(rep, debut, len(rep) - debut))
+}
+
+fn integration_github_derniere_release(depot: Text) -> Option<Text> {
+    let separateur = find(depot, "/")
+    if not has(separateur) { return none }
+    let i = unwrap_or(separateur, 0)
+    if i < 1 or i >= len(depot) - 1 { return none }
+    let organisation = sub(depot, 0, i)
+    let projet = sub(depot, i + 1, len(depot) - i - 1)
+    if not integration_identifiant_simple(organisation, 64) or not integration_identifiant_simple(projet, 100) { return none }
+    return integration_https_get("api.github.com", "/repos/" + organisation + "/" + projet + "/releases/latest", "NolcBot-Updater/1.0")
+}
+
 fn integration_site_statut(url: Text) -> Int {
     if not integration_url_autorisee(url) { return -1 }
     let reste = sub(url, 8, len(url) - 8)

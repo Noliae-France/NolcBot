@@ -62,9 +62,15 @@ fn carte_info(icone: Text, titre: Text, texte: Text) -> Text {
     return carte_nolcbot(icone, titre, "│ " + texte)
 }
 
+fn version_nolcbot() -> Text {
+    let v = env("NOLCBOT_VERSION")
+    if has(v) and unwrap_or(v, "") != "" { return unwrap_or(v, "") }
+    return "v0.2.0-dev"
+}
+
 fn aide_design() -> Text {
-    return "## 📚 NolcBot — 152 commandes\n"
-        + "**Core** /help /ping /health /version /privacy /about /hello /echo\n"
+    return "## 📚 NolcBot — 154 commandes\n"
+        + "**Core** /help /ping /health /version /update_check /update_plan /privacy /about /hello /echo\n"
         + "**Admin** /config /config_get /config_list /config_delete /modules /groupe /permission /aclrole /ai_config\n"
         + "**Discord** /userinfo /user /serverinfo /roleinfo /channelinfo /avatar /banner /nickname /timestamp /timezone /calc /convert /choose\n"
         + "**Modo** /ban /ban_temp /kick /unban /mute /unmute /clear /slowmode /lock /unlock /warn /warnings /sanctions /sanction_revoke /sanction_appeal /note /report\n"
@@ -694,9 +700,41 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     if nom == "version" {
         return discord_reponse_ephemere(carte_nolcbot("🤖", "Version",
             ligne_carte("Nom", "NolcBot")
-            + ligne_carte("Version", "0.2.0")
+            + ligne_carte("Version", version_nolcbot())
             + ligne_carte("Runtime", "Nolc natif")
             + ligne_carte("Build", "Linux CI")))
+    }
+    if nom == "update_check" {
+        if not acl_admin(req.corps) { return acl_refus("admin") }
+        let release = integration_github_derniere_release("Noliae-France/NolcBot")
+        if not has(release) {
+            return discord_reponse_ephemere(carte_nolcbot("🔄", "Mise à jour GitHub",
+                "│ Impossible de joindre GitHub Releases maintenant.\n"
+                + "│ Vérifie la connexion réseau du serveur puis réessaie."))
+        }
+        let corps_release = unwrap_or(release, "")
+        let tag = unwrap_or(json_chemin_texte(corps_release, "tag_name"), "inconnue")
+        let url = unwrap_or(json_chemin_texte(corps_release, "html_url"), "https://github.com/Noliae-France/NolcBot/releases")
+        let published = unwrap_or(json_chemin_texte(corps_release, "published_at"), "inconnue")
+        var etat = "🟢 À jour"
+        if tag != version_nolcbot() { etat = "🟡 Release différente disponible" }
+        return discord_reponse_ephemere(carte_nolcbot("🔄", "Mise à jour GitHub",
+            ligne_carte("Version locale", version_nolcbot())
+            + ligne_carte("Dernière release", tag)
+            + ligne_carte("Publication", published)
+            + "│ **État** " + etat + "\n"
+            + "│ **Lien** " + url + "\n"
+            + "│ Lance `/update_plan` pour la procédure serveur."))
+    }
+    if nom == "update_plan" {
+        if not acl_admin(req.corps) { return acl_refus("admin") }
+        return discord_reponse_ephemere(carte_nolcbot("🧰", "Plan de mise à jour sécurisé",
+            "│ 1. Télécharger la dernière GitHub Release Linux.\n"
+            + "│ 2. Vérifier `nolcbot-linux.sha256` avant installation.\n"
+            + "│ 3. Sauvegarder le binaire actuel.\n"
+            + "│ 4. Remplacer le binaire puis redémarrer systemd si configuré.\n"
+            + "│ **Commande serveur** `scripts/update_from_github.sh`\n"
+            + "│ **Service optionnel** `NOLCBOT_SYSTEMD_SERVICE=nolcbot.service`"))
     }
     if nom == "privacy" {
         return discord_reponse_ephemere(carte_nolcbot("🔒", "Confidentialité",
@@ -1557,6 +1595,8 @@ fn commandes_json() -> Text {
         + "{\"name\":\"xp_reset\",\"description\":\"Réinitialise l’XP d’un membre\",\"type\":1,\"options\":[{\"type\":6,\"name\":\"membre\",\"description\":\"Membre ciblé\",\"required\":true}]},"
         + "{\"name\":\"health\",\"description\":\"Vérifie la santé du bot\",\"type\":1},"
         + "{\"name\":\"version\",\"description\":\"Affiche la version du bot\",\"type\":1},"
+        + "{\"name\":\"update_check\",\"description\":\"Vérifie la dernière release GitHub de NolcBot\",\"type\":1},"
+        + "{\"name\":\"update_plan\",\"description\":\"Affiche la procédure de mise à jour GitHub sécurisée\",\"type\":1},"
         + "{\"name\":\"privacy\",\"description\":\"Affiche la politique de données\",\"type\":1},"
         + "{\"name\":\"verify\",\"description\":\"Valide ton accès avec le code du serveur\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"code\",\"description\":\"Code de vérification\",\"required\":true}]},"
         + "{\"name\":\"data_delete\",\"description\":\"Demande la suppression de tes données\",\"type\":1},"

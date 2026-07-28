@@ -8,6 +8,7 @@ fn module_commande(nom: Text) -> Text {
     if nom == "quiz" or nom == "challenge" or nom == "morpion" or nom == "choose" or nom == "meme" or nom == "profile" or nom == "achievements" or nom == "xp_leaderboard" or nom == "xp_reset" { return "fun" }
     if nom == "voice" or nom == "music" { return "voice" }
     if nom == "stats" or nom == "stats_report" or nom == "stats_csv" { return "stats" }
+    if nom == "update_check" or nom == "update_plan" { return "core" }
     if nom == "daily" or nom == "weekly" or nom == "balance" or nom == "work" or nom == "shop" or nom == "buy" or nom == "inventory" or nom == "give" or nom == "transactions" { return "economy" }
     if nom == "ai" or nom == "summarize" or nom == "rewrite" or nom == "ideas" or nom == "faq_ai" { return "ai" }
     if nom == "rss" or nom == "rss_subscribe" or nom == "rss_unsubscribe" or nom == "calendar" or nom == "calendar_subscribe" or nom == "calendar_unsubscribe" or nom == "youtube_subscribe" or nom == "youtube_list" or nom == "github_subscribe" or nom == "reddit_subscribe" or nom == "twitch_status" or nom == "twitch_subscribe" or nom == "twitch_unsubscribe" or nom == "twitch_list" { return "integrations" }

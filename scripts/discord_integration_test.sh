@@ -206,7 +206,7 @@ section "Enregistrement des commandes slash"
 section "Enregistrement immédiat des commandes sur le serveur de test"
 ./bot commands-json >"$work_dir/commands_payload.json"
 jq '[.[] | select(.name as $n | [
-  "ping","help","health","version","privacy",
+  "ping","help","health","version","update_check","update_plan","privacy",
   "ban","kick","mute","warn","sanctions","clear","slowmode",
   "ticket","ticket_add","ticket_remove","ticket_close",
   "faq","faq_ai","community_event_ideas","community_announce_ai",
@@ -244,7 +244,7 @@ echo "Commandes globales visibles: $command_count"
 
 section "Vérification commandes slash par domaine"
 for command in \
-  ping help health version privacy \
+  ping help health version update_check update_plan privacy \
   ban kick mute warn sanctions clear slowmode \
   ticket ticket_add ticket_remove ticket_close \
   faq faq_ai community_event_ideas community_announce_ai \
