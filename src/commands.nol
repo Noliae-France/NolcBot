@@ -46,6 +46,22 @@ fn ligne_carte(label: Text, valeur: Text) -> Text {
     return "│ **" + label + "** `" + valeur + "`\n"
 }
 
+fn carte_ok(texte: Text) -> Text {
+    return carte_nolcbot("✅", "Action réussie", "│ " + texte)
+}
+
+fn carte_erreur(texte: Text) -> Text {
+    return carte_nolcbot("❌", "Action impossible", "│ " + texte)
+}
+
+fn carte_usage(texte: Text) -> Text {
+    return carte_nolcbot("⌁", "Utilisation", "│ `" + texte + "`")
+}
+
+fn carte_info(icone: Text, titre: Text, texte: Text) -> Text {
+    return carte_nolcbot(icone, titre, "│ " + texte)
+}
+
 fn aide_design() -> Text {
     return "## 📚 NolcBot — 152 commandes\n"
         + "**Core** /help /ping /health /version /privacy /about /hello /echo\n"
@@ -158,17 +174,17 @@ fn morpion_plateau(plateau: Text) -> Text {
 fn commande_discord(req: Requete, nom: Text) -> Reponse {
     if acl_serveur_bloque(req.corps) { return acl_refus_serveur() }
     if acl_utilisateur_bloque(req.corps) { return acl_refus_utilisateur() }
-    if acl_maintenance() and nom != "health" { return discord_reponse_ephemere("🛠️ Bot en maintenance. Réessaie plus tard.") }
-    if acl_maintenance_serveur(req.corps) and nom != "health" and not acl_admin(req.corps) { return discord_reponse_ephemere("🛠️ Ce serveur est en maintenance. Réessaie plus tard.") }
+    if acl_maintenance() and nom != "health" { return discord_reponse_ephemere(carte_info("🛠️", "Maintenance", "Bot en maintenance. Réessaie plus tard.")) }
+    if acl_maintenance_serveur(req.corps) and nom != "health" and not acl_admin(req.corps) { return discord_reponse_ephemere(carte_info("🛠️", "Maintenance serveur", "Ce serveur est en maintenance. Réessaie plus tard.")) }
     let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
     let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-    if module_desactive(req.corps, nom) { return discord_reponse_ephemere("⛔ Ce module est désactivé sur ce serveur.") }
+    if module_desactive(req.corps, nom) { return discord_reponse_ephemere(carte_info("⛔", "Module désactivé", "Ce module est désactivé sur ce serveur.")) }
     let reponse_module = router_commande(req, nom)
     if has(reponse_module) { return unwrap_or(reponse_module, discord_reponse_ephemere("❌ Erreur du module.")) }
     let limite_commandes = unwrap_or(parse_int(unwrap_or(store_lire(guild, "ratelimit.max_commands"), "0")), 0)
     let fenetre_commandes = unwrap_or(parse_int(unwrap_or(store_lire(guild, "ratelimit.window_seconds"), "10")), 10)
     let commandes_recentes = store_compter_recent_prefixe(guild, "command_user:" + user + ":", fenetre_commandes)
-    if limite_commandes > 0 and commandes_recentes >= limite_commandes { return discord_reponse_ephemere("⏳ Trop de commandes trop rapidement. Réessaie dans quelques secondes.") }
+    if limite_commandes > 0 and commandes_recentes >= limite_commandes { return discord_reponse_ephemere(carte_info("⏳", "Ralentis un peu", "Trop de commandes trop rapidement. Réessaie dans quelques secondes.")) }
     let _usage = store_log_action(
         guild,
         user,
@@ -181,16 +197,16 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let token = env("DISCORD_BOT_TOKEN")
-        if not has(token) { return discord_reponse_ephemere("❌ DISCORD_BOT_TOKEN manquant.") }
+        if not has(token) { return discord_reponse_ephemere(carte_erreur("DISCORD_BOT_TOKEN manquant.")) }
         let liste = discord_lister_invitations(unwrap_or(token, ""), guild)
-        if has(liste) { return discord_reponse_ephemere("📨 **Invitations du serveur**\n" + unwrap_or(liste, "")) }
-        return discord_reponse_ephemere("❌ Impossible de lire les invitations. Vérifie la permission Manage Guild.")
+        if has(liste) { return discord_reponse_ephemere(carte_nolcbot("📨", "Invitations du serveur", unwrap_or(liste, ""))) }
+        return discord_reponse_ephemere(carte_erreur("Impossible de lire les invitations. Vérifie la permission Manage Guild."))
     }
     if nom == "invite_stats" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let classement = store_classement_invitations(guild)
-        if not has(classement) { return discord_reponse_ephemere("📨 Aucun changement d’utilisation d’invitation n’est encore audité.") }
+        if not has(classement) { return discord_reponse_ephemere(carte_info("📨", "Invitations", "Aucun changement d’utilisation d’invitation n’est encore audité.")) }
         let lignes = unwrap_or(classement, "")
         var resultat = "📈 **Classement des invitations observées**\n"
         var reste = lignes
@@ -216,18 +232,18 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             let nom_partenaire = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.0.value"), "")
             let lien = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.1.value"), "")
             let description = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.2.value"), "")
-            if nom_partenaire == "" or len(nom_partenaire) > 100 or lien == "" or len(lien) > 300 or len(description) > 1000 { return discord_reponse_ephemere("❌ Nom, lien ou description invalide.") }
-            if store_log_action(guild, auteur, "partnership_request", nom_partenaire, lien + "\n" + description) { return discord_reponse_message("🤝 Demande de partenariat enregistrée.") }
-            return discord_reponse_ephemere("❌ Impossible d’enregistrer la demande.")
+            if nom_partenaire == "" or len(nom_partenaire) > 100 or lien == "" or len(lien) > 300 or len(description) > 1000 { return discord_reponse_ephemere(carte_erreur("Nom, lien ou description invalide.")) }
+            if store_log_action(guild, auteur, "partnership_request", nom_partenaire, lien + "\n" + description) { return discord_reponse_message(carte_ok("Demande de partenariat enregistrée.")) }
+            return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer la demande."))
         }
         if not acl_admin(req.corps) { return acl_refus("admin") }
         if sous == "lister" {
             let liste = store_lister_partenariats(guild)
-            if has(liste) { return discord_reponse_ephemere("🤝 **Demandes de partenariat**\n" + unwrap_or(liste, "")) }
-            return discord_reponse_ephemere("Aucune demande de partenariat.")
+            if has(liste) { return discord_reponse_ephemere(carte_nolcbot("🤝", "Demandes de partenariat", unwrap_or(liste, ""))) }
+            return discord_reponse_ephemere(carte_info("🤝", "Partenariats", "Aucune demande de partenariat."))
         }
         let id = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.0.value"), "")
-        if id == "" { return discord_reponse_ephemere("Usage : `/partnership accepter|refuser id`. ") }
+        if id == "" { return discord_reponse_ephemere(carte_usage("/partnership accepter|refuser id")) }
         if sous == "accepter" or sous == "refuser" {
             let action = "partnership_" + sous
             if store_log_action(guild, auteur, action, id, "Décision administrateur") {
@@ -236,42 +252,42 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
                     let token_partenaire = env("DISCORD_BOT_TOKEN")
                     if has(salon_partenaire) and has(token_partenaire) { let _publication = discord_envoie_message(unwrap_or(token_partenaire, ""), unwrap_or(salon_partenaire, ""), "🤝 Partenariat accepté ! Demande #" + id + " validée par l’équipe.") }
                 }
-                return discord_reponse_message("✅ Décision de partenariat enregistrée.")
+                return discord_reponse_message(carte_ok("Décision de partenariat enregistrée."))
             }
         }
-        return discord_reponse_ephemere("❌ Sous-commande partenariat inconnue.")
+        return discord_reponse_ephemere(carte_erreur("Sous-commande partenariat inconnue."))
     }
     if nom == "weather" {
         let ville = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let meteo = integration_meteo(ville)
-        if has(meteo) { return discord_reponse_message("🌤️ " + integration_texte_sans_mentions(unwrap_or(meteo, ""))) }
-        return discord_reponse_ephemere("❌ Météo indisponible ou ville invalide.")
+        if has(meteo) { return discord_reponse_message(carte_nolcbot("🌤️", "Météo", "│ " + integration_texte_sans_mentions(unwrap_or(meteo, "")))) }
+        return discord_reponse_ephemere(carte_erreur("Météo indisponible ou ville invalide."))
     }
     if nom == "define" {
         let mot = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let definition = integration_definition(mot)
-        if has(definition) { return discord_reponse_message("📖 **" + mot + "** : " + integration_texte_sans_mentions(unwrap_or(definition, ""))) }
-        return discord_reponse_ephemere("❌ Définition indisponible ou mot invalide.")
+        if has(definition) { return discord_reponse_message(carte_nolcbot("📖", "Définition", "│ **" + mot + "**\n│ " + integration_texte_sans_mentions(unwrap_or(definition, "")))) }
+        return discord_reponse_ephemere(carte_erreur("Définition indisponible ou mot invalide."))
     }
     if nom == "qr" {
         let contenu_qr = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let url_qr = integration_qr_url(contenu_qr)
-        if has(url_qr) { return discord_reponse_message("🔳 QR code :\n" + unwrap_or(url_qr, "")) }
-        return discord_reponse_ephemere("❌ Texte QR invalide ou trop long (500 caractères maximum).")
+        if has(url_qr) { return discord_reponse_message(carte_nolcbot("🔳", "QR code", unwrap_or(url_qr, ""))) }
+        return discord_reponse_ephemere(carte_erreur("Texte QR invalide ou trop long (500 caractères maximum)."))
     }
     if nom == "password" {
         let longueur = unwrap_or(parse_int(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "16")), 16)
-        if longueur < 8 or longueur > 64 { return discord_reponse_ephemere("❌ La longueur doit être comprise entre 8 et 64.") }
+        if longueur < 8 or longueur > 64 { return discord_reponse_ephemere(carte_erreur("La longueur doit être comprise entre 8 et 64.")) }
         let mot_de_passe = mot_de_passe_local(longueur)
-        if mot_de_passe == "" { return discord_reponse_ephemere("❌ Le générateur sécurisé est indisponible.") }
-        return discord_reponse_ephemere("🔐 Mot de passe généré : `" + mot_de_passe + "`\nNe l’utilise pas pour un secret critique : génère ces secrets avec un gestionnaire dédié.")
+        if mot_de_passe == "" { return discord_reponse_ephemere(carte_erreur("Le générateur sécurisé est indisponible.")) }
+        return discord_reponse_ephemere(carte_nolcbot("🔐", "Mot de passe généré", ligne_carte("Valeur", mot_de_passe) + "│ Utilise un gestionnaire dédié pour les secrets critiques."))
     }
     if nom == "poll" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let question = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
         let token = env("DISCORD_BOT_TOKEN")
-        if question == "" or salon == "" or not has(token) { return discord_reponse_ephemere("Usage : `/poll question`. ") }
+        if question == "" or salon == "" or not has(token) { return discord_reponse_ephemere(carte_usage("/poll question")) }
         let contenu = "📊 **Sondage**\n" + question + "\n\n👍 Oui    👎 Non\nRéagis avec l’emoji correspondant."
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
@@ -280,33 +296,33 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             let identifiant_poll = store_dernier_audit_id(guild, auteur, "poll", salon)
             let _save_poll_status = store_configurer(guild, "poll." + text(identifiant_poll) + ".status", "open")
             let _save_poll_question = store_configurer(guild, "poll." + text(identifiant_poll) + ".question", question)
-            return discord_reponse_message("✅ Sondage #" + text(identifiant_poll) + " publié. Vote avec `/poll_vote " + text(identifiant_poll) + " oui` ou `non`.")
+            return discord_reponse_message(carte_nolcbot("📊", "Sondage publié", ligne_carte("ID", text(identifiant_poll)) + "│ Vote avec `/poll_vote " + text(identifiant_poll) + " oui` ou `non`."))
         }
-        return discord_reponse_ephemere("❌ Impossible de publier le sondage.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de publier le sondage."))
     }
     if nom == "poll_vote" {
         let identifiant_poll = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
         let choix_poll = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), ""))
         let guild_poll = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user_poll = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if identifiant_poll < 1 or (choix_poll != "oui" and choix_poll != "non") or guild_poll == "" or user_poll == "" { return discord_reponse_ephemere("Usage : `/poll_vote id oui|non`. ") }
-        if unwrap_or(store_lire(guild_poll, "poll." + text(identifiant_poll) + ".status"), "") != "open" { return discord_reponse_ephemere("❌ Ce sondage est fermé ou introuvable.") }
+        if identifiant_poll < 1 or (choix_poll != "oui" and choix_poll != "non") or guild_poll == "" or user_poll == "" { return discord_reponse_ephemere(carte_usage("/poll_vote id oui|non")) }
+        if unwrap_or(store_lire(guild_poll, "poll." + text(identifiant_poll) + ".status"), "") != "open" { return discord_reponse_ephemere(carte_erreur("Ce sondage est fermé ou introuvable.")) }
         let cle_vote = "poll." + text(identifiant_poll) + ".vote." + user_poll
-        if has(store_lire(guild_poll, cle_vote)) { return discord_reponse_ephemere("⛔ Tu as déjà voté pour ce sondage.") }
+        if has(store_lire(guild_poll, cle_vote)) { return discord_reponse_ephemere(carte_info("⛔", "Vote déjà enregistré", "Tu as déjà voté pour ce sondage.")) }
         let cle_compteur = "poll." + text(identifiant_poll) + "." + choix_poll
         let total = unwrap_or(parse_int(unwrap_or(store_lire(guild_poll, cle_compteur), "0")), 0) + 1
-        if store_configurer(guild_poll, cle_vote, choix_poll) and store_configurer(guild_poll, cle_compteur, text(total)) { return discord_reponse_message("✅ Vote enregistré pour **" + choix_poll + "**.") }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer ton vote.")
+        if store_configurer(guild_poll, cle_vote, choix_poll) and store_configurer(guild_poll, cle_compteur, text(total)) { return discord_reponse_message(carte_nolcbot("📊", "Vote enregistré", ligne_carte("Choix", choix_poll))) }
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer ton vote."))
     }
     if nom == "poll_close" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let identifiant_poll = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
         let guild_poll = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
-        if identifiant_poll < 1 or guild_poll == "" or unwrap_or(store_lire(guild_poll, "poll." + text(identifiant_poll) + ".status"), "") != "open" { return discord_reponse_ephemere("❌ Sondage ouvert introuvable.") }
+        if identifiant_poll < 1 or guild_poll == "" or unwrap_or(store_lire(guild_poll, "poll." + text(identifiant_poll) + ".status"), "") != "open" { return discord_reponse_ephemere(carte_erreur("Sondage ouvert introuvable.")) }
         let oui = unwrap_or(store_lire(guild_poll, "poll." + text(identifiant_poll) + ".oui"), "0")
         let non_ = unwrap_or(store_lire(guild_poll, "poll." + text(identifiant_poll) + ".non"), "0")
-        if store_configurer(guild_poll, "poll." + text(identifiant_poll) + ".status", "closed") { return discord_reponse_message("📊 Sondage #" + text(identifiant_poll) + " clôturé. Résultats : oui **" + oui + "**, non **" + non_ + "**.") }
-        return discord_reponse_ephemere("❌ Impossible de clôturer le sondage.")
+        if store_configurer(guild_poll, "poll." + text(identifiant_poll) + ".status", "closed") { return discord_reponse_message(carte_nolcbot("📊", "Sondage clôturé", ligne_carte("ID", text(identifiant_poll)) + ligne_carte("Oui", oui) + ligne_carte("Non", non_))) }
+        return discord_reponse_ephemere(carte_erreur("Impossible de clôturer le sondage."))
     }
     if nom == "announce_schedule" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -315,13 +331,13 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild_announce = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur_announce = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let salon_announce = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
-        if secondes_announce < 1 or secondes_announce > 2592000 or texte_announce == "" or len(texte_announce) > 1900 { return discord_reponse_ephemere("Usage : `/announce_schedule secondes message` (1 seconde à 30 jours).") }
+        if secondes_announce < 1 or secondes_announce > 2592000 or texte_announce == "" or len(texte_announce) > 1900 { return discord_reponse_ephemere(carte_usage("/announce_schedule secondes message — 1 seconde à 30 jours")) }
         let encode_announce = "__noliae_announce|" + texte_announce
         if store_creer_rappel(guild_announce, auteur_announce, salon_announce, encode_announce, epoch_maintenant() + secondes_announce) {
             let _log_announce = store_log_action(guild_announce, auteur_announce, "announcement_schedule", salon_announce, texte_announce)
-            return discord_reponse_message("✅ Annonce programmée dans " + text(secondes_announce) + " seconde(s).")
+            return discord_reponse_message(carte_nolcbot("📣", "Annonce programmée", ligne_carte("Délai", text(secondes_announce) + "s")))
         }
-        return discord_reponse_ephemere("❌ Impossible de programmer l’annonce.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de programmer l’annonce."))
     }
     if nom == "remind" {
         let secondes = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
@@ -329,12 +345,12 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
-        if secondes < 1 or secondes > 2592000 or contenu == "" { return discord_reponse_ephemere("Usage : `/remind secondes texte` (1 seconde à 30 jours).") }
+        if secondes < 1 or secondes > 2592000 or contenu == "" { return discord_reponse_ephemere(carte_usage("/remind secondes texte — 1 seconde à 30 jours")) }
         if store_creer_rappel(guild, user, salon, contenu, epoch_maintenant() + secondes) {
             let _log = store_log_action(guild, user, "reminder_create", salon, contenu)
-            return discord_reponse_message("✅ Rappel #" + text(store_dernier_rappel(guild, user)) + " enregistré dans " + text(secondes) + " seconde(s). Utilise `/remind_cancel id` pour l’annuler.")
+            return discord_reponse_message(carte_nolcbot("⏰", "Rappel créé", ligne_carte("Délai", text(secondes) + "s") + "│ Annulation : `/remind_cancel id`"))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer le rappel.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer le rappel."))
     }
     if nom == "remind_repeat" {
         let secondes_repeat = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
@@ -342,46 +358,46 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild_repeat = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user_repeat = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let salon_repeat = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
-        if secondes_repeat < 60 or secondes_repeat > 2592000 or contenu_repeat == "" { return discord_reponse_ephemere("Usage : `/remind_repeat secondes texte` (60 secondes à 30 jours).") }
+        if secondes_repeat < 60 or secondes_repeat > 2592000 or contenu_repeat == "" { return discord_reponse_ephemere(carte_usage("/remind_repeat secondes texte — 60 secondes à 30 jours")) }
         let encode_repeat = "__noliae_repeat|" + text(secondes_repeat) + "|" + contenu_repeat
         if store_creer_rappel(guild_repeat, user_repeat, salon_repeat, encode_repeat, epoch_maintenant() + secondes_repeat) {
             let _log_repeat = store_log_action(guild_repeat, user_repeat, "reminder_repeat_create", salon_repeat, contenu_repeat)
-            return discord_reponse_message("✅ Rappel récurrent créé, première échéance dans " + text(secondes_repeat) + " seconde(s).")
+            return discord_reponse_message(carte_nolcbot("🔁", "Rappel récurrent créé", ligne_carte("Première échéance", text(secondes_repeat) + "s")))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer le rappel récurrent.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer le rappel récurrent."))
     }
     if nom == "remind_cancel" {
         let id = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if id < 1 or guild == "" or user == "" { return discord_reponse_ephemere("Usage : `/remind_cancel id`. ") }
+        if id < 1 or guild == "" or user == "" { return discord_reponse_ephemere(carte_usage("/remind_cancel id")) }
         if store_annuler_rappel(guild, user, id) {
             let _log = store_log_action(guild, user, "reminder_cancel", text(id), "Rappel annulé")
-            return discord_reponse_message("✅ Rappel #" + text(id) + " annulé.")
+            return discord_reponse_message(carte_nolcbot("⏰", "Rappel annulé", ligne_carte("ID", text(id))))
         }
-        return discord_reponse_ephemere("❌ Rappel introuvable ou il ne t’appartient pas.")
+        return discord_reponse_ephemere(carte_erreur("Rappel introuvable ou il ne t’appartient pas."))
     }
     if nom == "reminders" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let rappels = store_lister_rappels(guild, user)
-        if has(rappels) { return discord_reponse_ephemere("⏰ Tes rappels (id:échéance Unix) :\n" + unwrap_or(rappels, "")) }
-        return discord_reponse_ephemere("⏰ Tu n’as aucun rappel actif.")
+        if has(rappels) { return discord_reponse_ephemere(carte_nolcbot("⏰", "Tes rappels", "│ Format `id:échéance Unix`\n" + unwrap_or(rappels, ""))) }
+        return discord_reponse_ephemere(carte_info("⏰", "Rappels", "Tu n’as aucun rappel actif."))
     }
     if nom == "balance" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        return discord_reponse_ephemere("💰 Solde de <@" + user + "> : **" + text(store_solde(guild, user)) + "** pièces")
+        return discord_reponse_ephemere(carte_nolcbot("💰", "Solde", "│ **Membre** <@" + user + ">\n" + ligne_carte("Pièces", text(store_solde(guild, user)))))
     }
     if nom == "leaderboard" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let meilleur = store_meilleur_solde(guild)
-        if not has(meilleur) { return discord_reponse_ephemere("🏆 Aucun solde enregistré sur ce serveur.") }
+        if not has(meilleur) { return discord_reponse_ephemere(carte_info("🏆", "Économie", "Aucun solde enregistré sur ce serveur.")) }
         let valeur = unwrap_or(meilleur, "")
         let separateur = find(valeur, "|")
-        if not has(separateur) { return discord_reponse_ephemere("🏆 Classement indisponible.") }
+        if not has(separateur) { return discord_reponse_ephemere(carte_erreur("Classement indisponible.")) }
         let i = unwrap_or(separateur, 0)
-        return discord_reponse_message("🏆 **Classement économie**\n🥇 <@" + sub(valeur, 0, i) + "> — **" + sub(valeur, i + 1, len(valeur) - i - 1) + "** pièces")
+        return discord_reponse_message(carte_nolcbot("🏆", "Classement économie", "│ 🥇 <@" + sub(valeur, 0, i) + "> — **" + sub(valeur, i + 1, len(valeur) - i - 1) + "** pièces"))
     }
     if nom == "daily" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -390,9 +406,9 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let nouveau = store_reclamer_daily(guild, user, maintenant)
         if nouveau >= 0 {
             let _log = store_log_action(guild, user, "economy_daily", user, "Récompense quotidienne")
-            return discord_reponse_message("🎁 Récompense quotidienne : **100** pièces. Solde : **" + text(nouveau) + "**.")
+            return discord_reponse_message(carte_nolcbot("🎁", "Récompense quotidienne", ligne_carte("Gain", "100 pièces") + ligne_carte("Solde", text(nouveau))))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer ta récompense.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer ta récompense."))
     }
     if nom == "weekly" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -400,9 +416,9 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let nouveau = store_reclamer_weekly(guild, user, epoch_maintenant())
         if nouveau >= 0 {
             let _log = store_log_action(guild, user, "economy_weekly", user, "Récompense hebdomadaire")
-            return discord_reponse_message("🎁 Récompense hebdomadaire : **500** pièces. Solde : **" + text(nouveau) + "**.")
+            return discord_reponse_message(carte_nolcbot("🎁", "Récompense hebdomadaire", ligne_carte("Gain", "500 pièces") + ligne_carte("Solde", text(nouveau))))
         }
-        return discord_reponse_ephemere("❌ Récompense hebdomadaire déjà récupérée ou indisponible.")
+        return discord_reponse_ephemere(carte_info("⏳", "Hebdomadaire", "Récompense hebdomadaire déjà récupérée ou indisponible."))
     }
     if nom == "work" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -411,12 +427,12 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let nouveau = store_reclamer_work(guild, user, epoch_maintenant(), recompense)
         if nouveau >= 0 {
             let _log = store_log_action(guild, user, "economy_work", user, text(recompense) + " pièces")
-            return discord_reponse_message("💼 Travail terminé : **" + text(recompense) + "** pièces. Solde : **" + text(nouveau) + "**.")
+            return discord_reponse_message(carte_nolcbot("💼", "Travail terminé", ligne_carte("Gain", text(recompense) + " pièces") + ligne_carte("Solde", text(nouveau))))
         }
-        return discord_reponse_ephemere("⏳ Tu as déjà travaillé récemment. Reviens dans une heure.")
+        return discord_reponse_ephemere(carte_info("⏳", "Travail en cooldown", "Tu as déjà travaillé récemment. Reviens dans une heure."))
     }
     if nom == "shop" {
-        return discord_reponse_message("🛒 **Boutique**\n`coffee` — 100 pièces\n`ticket` — 250 pièces\n`gem` — 1000 pièces\nUtilise `/buy objet quantité`.")
+        return discord_reponse_message(carte_nolcbot("🛒", "Boutique", ligne_carte("coffee", "100 pièces") + ligne_carte("ticket", "250 pièces") + ligne_carte("gem", "1000 pièces") + "│ Utilise `/buy objet quantité`."))
     }
     if nom == "buy" {
         let objet = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), ""))
@@ -425,14 +441,14 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         if objet == "coffee" { prix = 100 }
         if objet == "ticket" { prix = 250 }
         if objet == "gem" { prix = 1000 }
-        if prix == 0 or quantite < 1 or quantite > 100 { return discord_reponse_ephemere("❌ Objet inconnu ou quantité invalide. Objets : `coffee`, `ticket`, `gem` (1 à 100).") }
+        if prix == 0 or quantite < 1 or quantite > 100 { return discord_reponse_ephemere(carte_usage("/buy coffee|ticket|gem quantité — 1 à 100")) }
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         if store_acheter(guild, user, objet, prix, quantite) {
             let _log = store_log_action(guild, user, "economy_buy", objet, text(quantite))
-            return discord_reponse_message("✅ Achat effectué : " + text(quantite) + " × `" + objet + "`.")
+            return discord_reponse_message(carte_nolcbot("🛒", "Achat effectué", ligne_carte("Objet", objet) + ligne_carte("Quantité", text(quantite))))
         }
-        return discord_reponse_ephemere("❌ Solde insuffisant ou achat impossible.")
+        return discord_reponse_ephemere(carte_erreur("Solde insuffisant ou achat impossible."))
     }
     if nom == "inventory" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -440,50 +456,55 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let cafe = unwrap_or(store_lire(guild, "economy.inventory." + user + ".coffee"), "0")
         let ticket = unwrap_or(store_lire(guild, "economy.inventory." + user + ".ticket"), "0")
         let gem = unwrap_or(store_lire(guild, "economy.inventory." + user + ".gem"), "0")
-        return discord_reponse_ephemere("🎒 Inventaire\n☕ coffee : " + cafe + "\n🎟️ ticket : " + ticket + "\n💎 gem : " + gem)
+        return discord_reponse_ephemere(carte_nolcbot("🎒", "Inventaire", ligne_carte("☕ coffee", cafe) + ligne_carte("🎟️ ticket", ticket) + ligne_carte("💎 gem", gem)))
     }
     if nom == "transactions" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let historique = store_historique_economie(guild, user)
-        if has(historique) { return discord_reponse_ephemere("🧾 Tes 10 dernières opérations économie (timestamp:action:cible:détail) :\n" + unwrap_or(historique, "")) }
-        return discord_reponse_ephemere("Aucune transaction enregistrée.")
+        if has(historique) { return discord_reponse_ephemere(carte_nolcbot("🧾", "Transactions économie", "│ Format `timestamp:action:cible:détail`\n" + unwrap_or(historique, ""))) }
+        return discord_reponse_ephemere(carte_info("🧾", "Transactions", "Aucune transaction enregistrée."))
     }
     if nom == "pay" {
         let cible = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let montant = unwrap_or(json_chemin_int(req.corps, "data.options.1.value"), 0)
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if cible == "" or montant < 1 or cible == auteur { return discord_reponse_ephemere("Usage : `/pay membre montant`.") }
-        if not store_transferer(guild, auteur, cible, montant) { return discord_reponse_ephemere("❌ Solde insuffisant ou transfert impossible.") }
+        if cible == "" or montant < 1 or cible == auteur { return discord_reponse_ephemere(carte_usage("/pay membre montant")) }
+        if not store_transferer(guild, auteur, cible, montant) { return discord_reponse_ephemere(carte_erreur("Solde insuffisant ou transfert impossible.")) }
         let nouveau_solde = store_solde(guild, auteur)
         let _log = store_log_action(guild, auteur, "economy_pay", cible, text(montant))
-        return discord_reponse_message("💸 Paiement envoyé à <@" + cible + "> : **" + text(montant) + "** pièces. Solde : **" + text(nouveau_solde) + "**.")
+        return discord_reponse_message(carte_nolcbot("💸", "Paiement envoyé",
+            "│ **Destinataire** <@" + cible + ">\n"
+            + ligne_carte("Montant", text(montant) + " pièces")
+            + ligne_carte("Nouveau solde", text(nouveau_solde) + " pièces")))
     }
     if nom == "ticket" {
         let sujet = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "Demande de support")
         let guild_ticket = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user_ticket = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let limite_ticket = unwrap_or(parse_int(unwrap_or(store_lire(guild_ticket, "tickets.max_per_day"), "0")), 0)
-        if limite_ticket > 0 and store_compter_recent_acteur(guild_ticket, user_ticket, "ticket_open", 86400) >= limite_ticket { return discord_reponse_ephemere("⏳ Limite quotidienne de tickets atteinte.") }
-        if sujet == "" { return discord_reponse_ephemere("Usage : `/ticket sujet`. ") }
+        if limite_ticket > 0 and store_compter_recent_acteur(guild_ticket, user_ticket, "ticket_open", 86400) >= limite_ticket { return discord_reponse_ephemere(carte_info("⏳", "Limite tickets", "Limite quotidienne de tickets atteinte.")) }
+        if sujet == "" { return discord_reponse_ephemere(carte_usage("/ticket sujet")) }
         if discord_creer_ticket(req, sujet) {
             let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "ticket_open", "", sujet)
-            return discord_reponse_message("✅ Ton ticket est créé. Un salon privé vient d’être ouvert.")
+            return discord_reponse_message(carte_nolcbot("🎫", "Ticket créé",
+                "│ Ton salon privé vient d’être ouvert.\n"
+                + ligne_carte("Sujet", sujet)))
         }
-        return discord_reponse_ephemere("❌ Impossible de créer le ticket. Vérifie les permissions du bot.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de créer le ticket. Vérifie les permissions du bot."))
     }
     if nom == "ticket_add" or nom == "ticket_remove" {
         if not acl_autorise(req.corps, "ticket_close") { return acl_refus("ticket_close") }
         let membre_ticket = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let ajouter_ticket = nom == "ticket_add"
-        if membre_ticket == "" { return discord_reponse_ephemere("Usage : `/ticket_add membre` ou `/ticket_remove membre`.") }
+        if membre_ticket == "" { return discord_reponse_ephemere(carte_usage("/ticket_add membre ou /ticket_remove membre")) }
         if discord_ticket_membre(req, membre_ticket, ajouter_ticket) {
             let _log_ticket_member = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), nom, membre_ticket, "Participant de ticket modifié")
-            if ajouter_ticket { return discord_reponse_message("✅ Membre ajouté au ticket.") }
-            return discord_reponse_message("✅ Membre retiré du ticket.")
+            if ajouter_ticket { return discord_reponse_message(carte_ok("Membre ajouté au ticket.")) }
+            return discord_reponse_message(carte_ok("Membre retiré du ticket."))
         }
-        return discord_reponse_ephemere("❌ Impossible de modifier les participants du ticket.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de modifier les participants du ticket."))
     }
     if nom == "ticket_claim" or nom == "ticket_unclaim" {
         if not acl_autorise(req.corps, "ticket_close") { return acl_refus("ticket_close") }
@@ -492,19 +513,19 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let user_claim = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let cle_claim = "ticket.claim." + salon_claim
         if nom == "ticket_unclaim" {
-            if store_supprimer(guild_claim, cle_claim) { let _log_unclaim = store_log_action(guild_claim, user_claim, "ticket_unclaim", salon_claim, "Ticket libéré"); return discord_reponse_message("✅ Ticket libéré.") }
-            return discord_reponse_ephemere("❌ Ce ticket n’est pas attribué.")
+            if store_supprimer(guild_claim, cle_claim) { let _log_unclaim = store_log_action(guild_claim, user_claim, "ticket_unclaim", salon_claim, "Ticket libéré"); return discord_reponse_message(carte_ok("Ticket libéré.")) }
+            return discord_reponse_ephemere(carte_erreur("Ce ticket n’est pas attribué."))
         }
         let actuel_claim = store_lire(guild_claim, cle_claim)
-        if has(actuel_claim) and unwrap_or(actuel_claim, "") != user_claim { return discord_reponse_ephemere("❌ Ce ticket est déjà attribué à <@" + unwrap_or(actuel_claim, "") + ">.") }
-        if store_configurer(guild_claim, cle_claim, user_claim) { let _log_claim = store_log_action(guild_claim, user_claim, "ticket_claim", salon_claim, "Ticket pris en charge"); return discord_reponse_message("✅ Ticket pris en charge par toi.") }
-        return discord_reponse_ephemere("❌ Impossible d’attribuer ce ticket.")
+        if has(actuel_claim) and unwrap_or(actuel_claim, "") != user_claim { return discord_reponse_ephemere(carte_nolcbot("🎫", "Ticket déjà attribué", "│ Responsable actuel : <@" + unwrap_or(actuel_claim, "") + ">")) }
+        if store_configurer(guild_claim, cle_claim, user_claim) { let _log_claim = store_log_action(guild_claim, user_claim, "ticket_claim", salon_claim, "Ticket pris en charge"); return discord_reponse_message(carte_ok("Ticket pris en charge par toi.")) }
+        return discord_reponse_ephemere(carte_erreur("Impossible d’attribuer ce ticket."))
     }
     if nom == "ticket_transcript" {
         if not acl_autorise(req.corps, "ticket_close") { return acl_refus("ticket_close") }
         let transcription = discord_ticket_transcription(req)
         if has(transcription) { return discord_reponse_message(unwrap_or(transcription, "")) }
-        return discord_reponse_ephemere("❌ Impossible de récupérer les messages du ticket.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de récupérer les messages du ticket."))
     }
     if nom == "ticket_priority" {
         if not acl_autorise(req.corps, "ticket_close") { return acl_refus("ticket_close") }
@@ -512,13 +533,13 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild_priorite = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let salon_priorite = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
         let auteur_priorite = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if priorite != "basse" and priorite != "normale" and priorite != "haute" and priorite != "urgente" { return discord_reponse_ephemere("Usage : `/ticket_priority basse|normale|haute|urgente`. ") }
-        if guild_priorite == "" or salon_priorite == "" { return discord_reponse_ephemere("Cette commande doit être utilisée dans un ticket.") }
+        if priorite != "basse" and priorite != "normale" and priorite != "haute" and priorite != "urgente" { return discord_reponse_ephemere(carte_usage("/ticket_priority basse|normale|haute|urgente")) }
+        if guild_priorite == "" or salon_priorite == "" { return discord_reponse_ephemere(carte_info("🎫", "Ticket requis", "Cette commande doit être utilisée dans un ticket.")) }
         if store_configurer(guild_priorite, "ticket.priority." + salon_priorite, priorite) {
             let _audit_priority = store_log_action(guild_priorite, auteur_priorite, "ticket_priority", salon_priorite, priorite)
-            return discord_reponse_message("✅ Priorité du ticket réglée sur **" + priorite + "**.")
+            return discord_reponse_message(carte_nolcbot("🎫", "Priorité ticket", ligne_carte("Priorité", priorite)))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer la priorité.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer la priorité."))
     }
     if nom == "stats" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -552,7 +573,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let csv = "metrique,valeur\ncommandes," + text(store_compter(guild, "command_user:")) + "\nmessages," + text(store_compter(guild, "message")) + "\narrivees," + text(store_compter(guild, "member_join")) + "\ndeparts," + text(store_compter(guild, "member_leave")) + "\nvoice_join," + text(store_compter(guild, "voice_join")) + "\nvoice_leave," + text(store_compter(guild, "voice_leave")) + "\nvoice_seconds," + text(store_somme_prefixe(guild, "voice.seconds.")) + "\ntickets," + text(store_compter(guild, "ticket_")) + "\nmoderation," + text(store_compter(guild, "ban") + store_compter(guild, "kick") + store_compter(guild, "warn") + store_compter(guild, "mute"))
-        return discord_reponse_ephemere("📄 Export CSV\n```csv\n" + csv + "\n```")
+        return discord_reponse_ephemere(carte_nolcbot("📄", "Export CSV", "```csv\n" + csv + "\n```"))
     }
     if nom == "stats_report" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -561,7 +582,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         var secondes_report = 86400
         if periode_report == "semaine" { secondes_report = 604800 }
         if periode_report == "mois" { secondes_report = 2592000 }
-        if periode_report != "jour" and periode_report != "semaine" and periode_report != "mois" { return discord_reponse_ephemere("Période autorisée : jour, semaine ou mois.") }
+        if periode_report != "jour" and periode_report != "semaine" and periode_report != "mois" { return discord_reponse_ephemere(carte_usage("/stats_report jour|semaine|mois")) }
         let messages_report = store_compter_recent(guild_report, "message", secondes_report)
         let commandes_report = store_compter_recent_prefixe(guild_report, "command_user:", secondes_report)
         let joins_report = store_compter_recent(guild_report, "member_join", secondes_report)
@@ -578,10 +599,10 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let export_logs = store_audit_csv(guild)
-        if not has(export_logs) { return discord_reponse_ephemere("Aucun log exportable.") }
+        if not has(export_logs) { return discord_reponse_ephemere(carte_info("📄", "Logs", "Aucun log exportable.")) }
         var csv_logs = unwrap_or(export_logs, "")
         if len(csv_logs) > 1800 { csv_logs = sub(csv_logs, 0, 1790) + "\n..." }
-        return discord_reponse_ephemere("📄 Logs CSV\n```csv\n" + csv_logs + "\n```")
+        return discord_reponse_ephemere(carte_nolcbot("📄", "Logs CSV", "```csv\n" + csv_logs + "\n```"))
     }
     if nom == "profile" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -613,7 +634,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     if nom == "xp_leaderboard" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let classement_xp = store_classement_xp(guild)
-        if not has(classement_xp) { return discord_reponse_ephemere("🏆 Aucun XP enregistré sur ce serveur.") }
+        if not has(classement_xp) { return discord_reponse_ephemere(carte_info("🏆", "Classement XP", "Aucun XP enregistré sur ce serveur.")) }
         var reste_xp = unwrap_or(classement_xp, "")
         var affichage_xp = "🏆 **Classement XP**\n"
         var rang_xp = 1
@@ -642,13 +663,13 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let cible_xp = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let guild_xp = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur_xp = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if cible_xp == "" or guild_xp == "" { return discord_reponse_ephemere("Usage : `/xp_reset membre`. ") }
+        if cible_xp == "" or guild_xp == "" { return discord_reponse_ephemere(carte_usage("/xp_reset membre")) }
         if store_configurer(guild_xp, "xp.user." + cible_xp, "0") {
             let _forget_xp_cooldown = store_supprimer(guild_xp, "xp.last." + cible_xp)
             let _audit_xp_reset = store_log_action(guild_xp, auteur_xp, "xp_reset", cible_xp, "XP réinitialisée")
-            return discord_reponse_message("✅ XP de <@" + cible_xp + "> réinitialisée.")
+            return discord_reponse_message(carte_nolcbot("🏆", "XP réinitialisée", "│ **Membre** <@" + cible_xp + ">"))
         }
-        return discord_reponse_ephemere("❌ Impossible de réinitialiser l’XP.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de réinitialiser l’XP."))
     }
     if nom == "health" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -687,9 +708,9 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     if nom == "data_delete" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if guild == "" or user == "" { return discord_reponse_ephemere("Cette commande doit être utilisée sur un serveur.") }
-        if store_supprimer_donnees(guild, user) { return discord_reponse_ephemere("✅ Tes données d’audit ont été supprimées. Les données nécessaires aux obligations de modération peuvent être conservées.") }
-        return discord_reponse_ephemere("❌ Impossible de supprimer tes données.")
+        if guild == "" or user == "" { return discord_reponse_ephemere(carte_info("🏠", "Serveur requis", "Cette commande doit être utilisée sur un serveur.")) }
+        if store_supprimer_donnees(guild, user) { return discord_reponse_ephemere(carte_ok("Tes données d’audit ont été supprimées. Les données nécessaires aux obligations de modération peuvent être conservées.")) }
+        return discord_reponse_ephemere(carte_erreur("Impossible de supprimer tes données."))
     }
     if nom == "verify" {
         let guild_verify = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -697,29 +718,34 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let code_verify = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let attendu_verify = store_lire(guild_verify, "verification.code")
         let role_verify = store_lire(guild_verify, "verification.role_id")
-        if guild_verify == "" or user_verify == "" or not has(attendu_verify) or not has(role_verify) { return discord_reponse_ephemere("❌ La vérification n’est pas configurée sur ce serveur.") }
+        if guild_verify == "" or user_verify == "" or not has(attendu_verify) or not has(role_verify) { return discord_reponse_ephemere(carte_erreur("La vérification n’est pas configurée sur ce serveur.")) }
         let tentatives_verify = store_compter_recent(guild_verify, "verify_attempt:" + user_verify, 600)
-        if tentatives_verify >= 5 { return discord_reponse_ephemere("⏳ Trop de tentatives de vérification. Réessaie dans 10 minutes.") }
+        if tentatives_verify >= 5 { return discord_reponse_ephemere(carte_info("⏳", "Vérification", "Trop de tentatives. Réessaie dans 10 minutes.")) }
         let _audit_attempt = store_log_action(guild_verify, user_verify, "verify_attempt:" + user_verify, user_verify, "Tentative de vérification")
-        if code_verify == "" or code_verify != unwrap_or(attendu_verify, "") { return discord_reponse_ephemere("❌ Code de vérification incorrect.") }
+        if code_verify == "" or code_verify != unwrap_or(attendu_verify, "") { return discord_reponse_ephemere(carte_erreur("Code de vérification incorrect.")) }
         let tok_verify = bot_token()
-        if not has(tok_verify) or not discord_ajouter_role(unwrap_or(tok_verify, ""), guild_verify, user_verify, unwrap_or(role_verify, "")) { return discord_reponse_ephemere("❌ Attribution du rôle vérifié impossible.") }
+        if not has(tok_verify) or not discord_ajouter_role(unwrap_or(tok_verify, ""), guild_verify, user_verify, unwrap_or(role_verify, "")) { return discord_reponse_ephemere(carte_erreur("Attribution du rôle vérifié impossible.")) }
         let role_non_verify = store_lire(guild_verify, "verification.unverified_role_id")
         if has(role_non_verify) { let _remove_unverified = discord_retirer_role(unwrap_or(tok_verify, ""), guild_verify, user_verify, unwrap_or(role_non_verify, "")) }
         let _forget_pending_verify = store_supprimer(guild_verify, "verification.pending." + user_verify)
         let _audit_verify = store_log_action(guild_verify, user_verify, "member_verify", user_verify, "Vérification par code réussie")
-        return discord_reponse_message("✅ Vérification réussie. Ton rôle a été attribué.")
+        return discord_reponse_message(carte_ok("Vérification réussie. Ton rôle a été attribué."))
     }
     if nom == "data_export" {
         let guild_export = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user_export = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if guild_export == "" or user_export == "" { return discord_reponse_ephemere("Cette commande doit être utilisée sur un serveur.") }
+        if guild_export == "" or user_export == "" { return discord_reponse_ephemere(carte_info("🏠", "Serveur requis", "Cette commande doit être utilisée sur un serveur.")) }
         let xp_export = unwrap_or(store_lire(guild_export, "xp.user." + user_export), "0")
         let solde_export = unwrap_or(store_lire(guild_export, "economy.balance." + user_export), "0")
         let voix_export = unwrap_or(store_lire(guild_export, "voice.seconds." + user_export), "0")
         let note_export = unwrap_or(store_lire(guild_export, "member.note." + user_export), "(aucune)")
         let inventaire_export = unwrap_or(store_lister_prefixe(guild_export, "economy.inventory." + user_export + ".", 50), "(vide)")
-        return discord_reponse_ephemere("📦 Export de tes données sur ce serveur\nXP : " + xp_export + "\nSolde : " + solde_export + "\nSecondes vocales : " + voix_export + "\nNote de modération : " + note_export + "\nInventaire : " + inventaire_export)
+        return discord_reponse_ephemere(carte_nolcbot("📦", "Export de tes données",
+            ligne_carte("XP", xp_export)
+            + ligne_carte("Solde", solde_export)
+            + ligne_carte("Secondes vocales", voix_export)
+            + ligne_carte("Note modération", note_export)
+            + "│ **Inventaire** " + inventaire_export))
     }
     if nom == "role" {
         let sous = unwrap_or(json_chemin_texte(req.corps, "data.options.0.name"), "")
@@ -727,13 +753,13 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let token = env("DISCORD_BOT_TOKEN")
-        if sous == "" or role == "" or guild == "" or user == "" or not has(token) { return discord_reponse_ephemere("Usage : `/role ajouter|retirer rôle`.") }
-        if not has(store_lire(guild, "role.self." + role)) { return discord_reponse_ephemere("Ce rôle n’est pas autorisé à l’auto-attribution.") }
+        if sous == "" or role == "" or guild == "" or user == "" or not has(token) { return discord_reponse_ephemere(carte_usage("/role ajouter|retirer rôle")) }
+        if not has(store_lire(guild, "role.self." + role)) { return discord_reponse_ephemere(carte_info("🎭", "Rôle non autorisé", "Ce rôle n’est pas autorisé à l’auto-attribution.")) }
         var ok = false
         if sous == "ajouter" { ok = discord_ajouter_role(unwrap_or(token, ""), guild, user, role) }
         if sous == "retirer" { ok = discord_retirer_role(unwrap_or(token, ""), guild, user, role) }
-        if ok { return discord_reponse_ephemere("✅ Rôle mis à jour.") }
-        return discord_reponse_ephemere("❌ Impossible de modifier ce rôle.")
+        if ok { return discord_reponse_ephemere(carte_ok("Rôle mis à jour.")) }
+        return discord_reponse_ephemere(carte_erreur("Impossible de modifier ce rôle."))
     }
     if nom == "roleconfig" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -741,19 +767,19 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let active = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "true")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let actor = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if role == "" or guild == "" { return discord_reponse_ephemere("Usage : `/roleconfig rôle actif`. ") }
+        if role == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/roleconfig rôle actif")) }
         if active == "false" {
             if store_supprimer(guild, "role.self." + role) {
                 let _log = store_log_action(guild, actor, "role_self_disable", role, "Auto-attribution désactivée")
-                return discord_reponse_message("✅ Auto-attribution désactivée pour <@&" + role + ">.")
+                return discord_reponse_message(carte_nolcbot("🎭", "Auto-rôle désactivé", "│ **Rôle** <@&" + role + ">"))
             }
-            return discord_reponse_ephemere("❌ Impossible de désactiver ce rôle.")
+            return discord_reponse_ephemere(carte_erreur("Impossible de désactiver ce rôle."))
         }
         if store_configurer(guild, "role.self." + role, "true") {
             let _log = store_log_action(guild, actor, "role_self_enable", role, "Auto-attribution activée")
-            return discord_reponse_message("✅ <@&" + role + "> est maintenant auto-attribuable.")
+            return discord_reponse_message(carte_nolcbot("🎭", "Auto-rôle activé", "│ **Rôle** <@&" + role + ">"))
         }
-        return discord_reponse_ephemere("❌ Impossible d’autoriser ce rôle.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’autoriser ce rôle."))
     }
     if nom == "role_temp" {
         if not acl_autorise(req.corps, "admin") { return acl_refus("admin") }
@@ -763,29 +789,34 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild_temp = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur_temp = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let salon_temp = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
-        if membre_temp == "" or role_temp == "" or secondes_temp < 1 or secondes_temp > 2592000 or guild_temp == "" { return discord_reponse_ephemere("Usage : `/role_temp membre rôle secondes` (1 seconde à 30 jours).") }
+        if membre_temp == "" or role_temp == "" or secondes_temp < 1 or secondes_temp > 2592000 or guild_temp == "" { return discord_reponse_ephemere(carte_usage("/role_temp membre rôle secondes — 1 seconde à 30 jours")) }
         let tok_temp = bot_token()
-        if not has(tok_temp) or not discord_ajouter_role(unwrap_or(tok_temp, ""), guild_temp, membre_temp, role_temp) { return discord_reponse_ephemere("❌ Attribution du rôle temporaire impossible.") }
+        if not has(tok_temp) or not discord_ajouter_role(unwrap_or(tok_temp, ""), guild_temp, membre_temp, role_temp) { return discord_reponse_ephemere(carte_erreur("Attribution du rôle temporaire impossible.")) }
         let encode_role = "__noliae_unrole|" + membre_temp + "|" + role_temp
         if store_creer_rappel(guild_temp, auteur_temp, salon_temp, encode_role, epoch_maintenant() + secondes_temp) {
             let _log_role_temp = store_log_action(guild_temp, auteur_temp, "temporary_role_create", membre_temp, role_temp + " pendant " + text(secondes_temp) + " secondes")
-            return discord_reponse_message("✅ Rôle temporaire attribué pour " + text(secondes_temp) + " seconde(s).")
+            return discord_reponse_message(carte_nolcbot("⏳", "Rôle temporaire attribué",
+                "│ **Membre** <@" + membre_temp + ">\n"
+                + "│ **Rôle** <@&" + role_temp + ">\n"
+                + ligne_carte("Durée", text(secondes_temp) + "s")))
         }
         let _rollback_role_temp = discord_retirer_role(unwrap_or(tok_temp, ""), guild_temp, membre_temp, role_temp)
-        return discord_reponse_ephemere("❌ Impossible de programmer le retrait du rôle.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de programmer le retrait du rôle."))
     }
     if nom == "report" {
         let cible = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let raison = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if cible == "" or raison == "" or guild == "" { return discord_reponse_ephemere("Usage : `/report membre raison`.") }
+        if cible == "" or raison == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/report membre raison")) }
         if store_log_action(guild, auteur, "report", cible, raison) {
             let tok = env("DISCORD_BOT_TOKEN")
             if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), guild, "REPORT", cible, raison) }
-            return discord_reponse_ephemere("✅ Signalement transmis à l’équipe de modération.")
+            return discord_reponse_ephemere(carte_nolcbot("🚨", "Signalement transmis",
+                "│ **Cible** <@" + cible + ">\n"
+                + ligne_carte("Statut", "envoyé à la modération")))
         }
-        return discord_reponse_ephemere("❌ Impossible d’envoyer le signalement.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’envoyer le signalement."))
     }
     if nom == "sanction_appeal" {
         let sanction_id = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
@@ -793,20 +824,20 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let identifiant = unwrap_or(parse_int(sanction_id), 0)
-        if identifiant < 1 or motif == "" or len(motif) > 1000 or guild == "" { return discord_reponse_ephemere("Usage : `/sanction_appeal id motif`.") }
-        if not store_sanction_existe(guild, identifiant) { return discord_reponse_ephemere("❌ Cette sanction n’existe pas sur ce serveur.") }
+        if identifiant < 1 or motif == "" or len(motif) > 1000 or guild == "" { return discord_reponse_ephemere(carte_usage("/sanction_appeal id motif")) }
+        if not store_sanction_existe(guild, identifiant) { return discord_reponse_ephemere(carte_erreur("Cette sanction n’existe pas sur ce serveur.")) }
         if store_log_action(guild, auteur, "sanction_appeal", sanction_id, motif) {
             let tok = env("DISCORD_BOT_TOKEN")
             if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), guild, "SANCTION_APPEAL", sanction_id, "Par <@" + auteur + "> : " + motif) }
-            return discord_reponse_ephemere("✅ Ton appel a été transmis à la modération.")
+            return discord_reponse_ephemere(carte_nolcbot("⚖️", "Appel transmis", ligne_carte("Sanction", sanction_id)))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer l’appel.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer l’appel."))
     }
     if nom == "suggest" {
         let texte_suggestion = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if texte_suggestion == "" or guild == "" { return discord_reponse_ephemere("Usage : `/suggest proposition`.") }
+        if texte_suggestion == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/suggest proposition")) }
         let anonymat = store_lire(guild, "community.suggestions_anonymous")
         var acteur_suggestion = auteur
         if has(anonymat) and (unwrap_or(anonymat, "") == "true" or unwrap_or(anonymat, "") == "1") { acteur_suggestion = "anonymous" }
@@ -815,9 +846,11 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             if acteur_suggestion == "anonymous" { let _private_owner = store_configurer(guild, "privacy.suggestion." + text(identifiant_suggestion) + "." + auteur, "1") }
             let tok = env("DISCORD_BOT_TOKEN")
             if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), guild, "SUGGESTION", acteur_suggestion, texte_suggestion) }
-            return discord_reponse_message("💡 Suggestion #" + text(identifiant_suggestion) + " enregistrée. Merci pour ta proposition !")
+            return discord_reponse_message(carte_nolcbot("💡", "Suggestion enregistrée",
+                ligne_carte("ID", text(identifiant_suggestion))
+                + ligne_carte("Statut", "en attente")))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer la suggestion.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer la suggestion."))
     }
     if nom == "suggest_status" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -826,13 +859,15 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let reponse = unwrap_or(json_chemin_texte(req.corps, "data.options.2.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if identifiant < 1 or guild == "" or (statut != "en_cours" and statut != "acceptee" and statut != "refusee") { return discord_reponse_ephemere("Usage : `/suggest_status id en_cours|acceptee|refusee réponse`. ") }
+        if identifiant < 1 or guild == "" or (statut != "en_cours" and statut != "acceptee" and statut != "refusee") { return discord_reponse_ephemere(carte_usage("/suggest_status id en_cours|acceptee|refusee réponse")) }
         if store_log_action(guild, auteur, "suggestion_status", text(identifiant), statut + " : " + reponse) {
             let tok = env("DISCORD_BOT_TOKEN")
             if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), guild, "SUGGESTION", text(identifiant), "Statut : " + statut + "\n" + reponse) }
-            return discord_reponse_message("✅ Suggestion #" + text(identifiant) + " marquée **" + statut + "**.")
+            return discord_reponse_message(carte_nolcbot("💡", "Suggestion mise à jour",
+                ligne_carte("ID", text(identifiant))
+                + ligne_carte("Statut", statut)))
         }
-        return discord_reponse_ephemere("❌ Impossible de modifier le statut de la suggestion.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de modifier le statut de la suggestion."))
     }
     if nom == "warn" {
         if not acl_autorise(req.corps, "warn") { return acl_refus("warn") }
@@ -840,7 +875,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let raison = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "Aucune raison fournie")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if cible == "" or guild == "" { return discord_reponse_ephemere("Usage : `/warn membre raison`.") }
+        if cible == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/warn membre raison")) }
         if store_log_action(guild, auteur, "warn", cible, raison) {
             let sanction_id = store_dernier_audit_id(guild, auteur, "warn", cible)
             let seuil = unwrap_or(parse_int(unwrap_or(store_lire(guild, "moderation.warn_threshold"), "0")), 0)
@@ -853,25 +888,30 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             }
             let tok = env("DISCORD_BOT_TOKEN")
             if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), guild, "WARN", cible, raison) }
-            return discord_reponse_message("⚠️ Avertissement #" + text(sanction_id) + " enregistré pour <@" + cible + ">.\nRaison : " + raison)
+            return discord_reponse_message(carte_nolcbot("⚠️", "Avertissement enregistré",
+                "│ **Membre** <@" + cible + ">\n"
+                + ligne_carte("ID sanction", text(sanction_id))
+                + "│ **Raison** " + raison))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer l’avertissement.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer l’avertissement."))
     }
     if nom == "warnings" {
         if not acl_autorise(req.corps, "warn") { return acl_refus("warn") }
         let cible = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
-        if cible == "" or guild == "" { return discord_reponse_ephemere("Usage : `/warnings membre`.") }
+        if cible == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/warnings membre")) }
         let total = store_compter_cible(guild, "warn", cible)
-        return discord_reponse_ephemere("⚠️ <@" + cible + "> a **" + text(total) + "** avertissement(s) enregistré(s).")
+        return discord_reponse_ephemere(carte_nolcbot("⚠️", "Avertissements",
+            "│ **Membre** <@" + cible + ">\n"
+            + ligne_carte("Total", text(total))))
     }
     if nom == "sanctions" {
         if not acl_autorise(req.corps, "warn") { return acl_refus("warn") }
         let cible = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let historique = store_historique_sanctions(guild, cible)
-        if has(historique) { return discord_reponse_ephemere("📜 Historique (id:action:raison) pour le membre :\n" + unwrap_or(historique, "")) }
-        return discord_reponse_ephemere("Aucune sanction enregistrée pour ce membre.")
+        if has(historique) { return discord_reponse_ephemere(carte_nolcbot("📜", "Historique sanctions", "│ Format `id:action:raison`\n" + unwrap_or(historique, ""))) }
+        return discord_reponse_ephemere(carte_info("📜", "Sanctions", "Aucune sanction enregistrée pour ce membre."))
     }
     if nom == "sanction_revoke" {
         if not acl_autorise(req.corps, "warn") { return acl_refus("warn") }
@@ -880,10 +920,10 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let identifiant = unwrap_or(parse_int(id), 0)
-        if identifiant < 1 or guild == "" { return discord_reponse_ephemere("Usage : `/sanction_revoke id raison`. L’identifiant doit être positif.") }
-        if not store_sanction_existe(guild, identifiant) { return discord_reponse_ephemere("❌ Cette sanction n’existe pas sur ce serveur.") }
-        if store_log_action(guild, auteur, "sanction_revoke", id, raison) { return discord_reponse_message("✅ Sanction #" + id + " révoquée et conservée dans l’historique.") }
-        return discord_reponse_ephemere("❌ Impossible de révoquer cette sanction.")
+        if identifiant < 1 or guild == "" { return discord_reponse_ephemere(carte_usage("/sanction_revoke id raison")) }
+        if not store_sanction_existe(guild, identifiant) { return discord_reponse_ephemere(carte_erreur("Cette sanction n’existe pas sur ce serveur.")) }
+        if store_log_action(guild, auteur, "sanction_revoke", id, raison) { return discord_reponse_message(carte_nolcbot("⚖️", "Sanction révoquée", ligne_carte("ID", id))) }
+        return discord_reponse_ephemere(carte_erreur("Impossible de révoquer cette sanction."))
     }
     if nom == "note" {
         if not acl_autorise(req.corps, "note") { return acl_refus("note") }
@@ -892,26 +932,26 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let texte_note = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.1.value"), "")
         let guild_note = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let auteur_note = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if cible_note == "" or guild_note == "" { return discord_reponse_ephemere("Usage : `/note ajouter|voir|supprimer membre [texte]`.") }
+        if cible_note == "" or guild_note == "" { return discord_reponse_ephemere(carte_usage("/note ajouter|voir|supprimer membre [texte]")) }
         let cle_note = "member.note." + cible_note
         if sous == "ajouter" {
-            if texte_note == "" or len(texte_note) > 1000 { return discord_reponse_ephemere("❌ La note doit contenir entre 1 et 1000 caractères.") }
+            if texte_note == "" or len(texte_note) > 1000 { return discord_reponse_ephemere(carte_erreur("La note doit contenir entre 1 et 1000 caractères.")) }
             if store_configurer(guild_note, cle_note, texte_note) {
                 let _audit_note = store_log_action(guild_note, auteur_note, "member_note_add", cible_note, "Note privée ajoutée")
-                return discord_reponse_message("✅ Note privée enregistrée pour <@" + cible_note + ">.")
+                return discord_reponse_message(carte_nolcbot("📝", "Note privée enregistrée", "│ **Membre** <@" + cible_note + ">"))
             }
-            return discord_reponse_ephemere("❌ Impossible d’enregistrer la note.")
+            return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer la note."))
         }
         if sous == "voir" {
             let note_lue = store_lire(guild_note, cle_note)
-            if has(note_lue) { return discord_reponse_ephemere("📝 Note privée pour <@" + cible_note + "> :\n" + unwrap_or(note_lue, "")) }
-            return discord_reponse_ephemere("Aucune note privée pour ce membre.")
+            if has(note_lue) { return discord_reponse_ephemere(carte_nolcbot("📝", "Note privée", "│ **Membre** <@" + cible_note + ">\n" + unwrap_or(note_lue, ""))) }
+            return discord_reponse_ephemere(carte_info("📝", "Note privée", "Aucune note privée pour ce membre."))
         }
         if sous == "supprimer" and store_supprimer(guild_note, cle_note) {
             let _audit_note_del = store_log_action(guild_note, auteur_note, "member_note_delete", cible_note, "Note privée supprimée")
-            return discord_reponse_message("✅ Note privée supprimée.")
+            return discord_reponse_message(carte_ok("Note privée supprimée."))
         }
-        return discord_reponse_ephemere("❌ Sous-commande note inconnue.")
+        return discord_reponse_ephemere(carte_erreur("Sous-commande note inconnue."))
     }
     if nom == "faq" {
         let sous = unwrap_or(json_chemin_texte(req.corps, "data.options.0.name"), "")
@@ -922,120 +962,120 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         if sous == "lister" {
             if not acl_admin(req.corps) { return acl_refus("admin") }
             let liste_faq = store_lister_faq(guild_faq)
-            if has(liste_faq) { return discord_reponse_ephemere("📚 Questions FAQ configurées :\n" + unwrap_or(liste_faq, "")) }
-            return discord_reponse_ephemere("Aucune question FAQ configurée.")
+            if has(liste_faq) { return discord_reponse_ephemere(carte_nolcbot("📚", "Questions FAQ", unwrap_or(liste_faq, ""))) }
+            return discord_reponse_ephemere(carte_info("📚", "FAQ", "Aucune question FAQ configurée."))
         }
-        if question == "" or guild_faq == "" or len(question) > 120 { return discord_reponse_ephemere("❌ La question doit contenir entre 1 et 120 caractères.") }
+        if question == "" or guild_faq == "" or len(question) > 120 { return discord_reponse_ephemere(carte_erreur("La question doit contenir entre 1 et 120 caractères.")) }
         let cle_faq = "faq." + question
         if sous == "ajouter" {
             if not acl_admin(req.corps) { return acl_refus("admin") }
-            if reponse_faq == "" or len(reponse_faq) > 1500 { return discord_reponse_ephemere("❌ La réponse doit contenir entre 1 et 1500 caractères.") }
+            if reponse_faq == "" or len(reponse_faq) > 1500 { return discord_reponse_ephemere(carte_erreur("La réponse doit contenir entre 1 et 1500 caractères.")) }
             if store_configurer(guild_faq, cle_faq, reponse_faq) {
                 let _audit_faq = store_log_action(guild_faq, auteur_faq, "faq_add", question, "Réponse FAQ enregistrée")
-                return discord_reponse_message("✅ Réponse FAQ enregistrée.")
+                return discord_reponse_message(carte_ok("Réponse FAQ enregistrée."))
             }
-            return discord_reponse_ephemere("❌ Impossible d’enregistrer la FAQ.")
+            return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer la FAQ."))
         }
         if sous == "supprimer" {
             if not acl_admin(req.corps) { return acl_refus("admin") }
             if store_supprimer(guild_faq, cle_faq) {
                 let _audit_faq_del = store_log_action(guild_faq, auteur_faq, "faq_delete", question, "Réponse FAQ supprimée")
-                return discord_reponse_message("✅ Réponse FAQ supprimée.")
+                return discord_reponse_message(carte_ok("Réponse FAQ supprimée."))
             }
-            return discord_reponse_ephemere("❌ Aucune réponse FAQ correspondante.")
+            return discord_reponse_ephemere(carte_erreur("Aucune réponse FAQ correspondante."))
         }
         let faq_lue = store_lire(guild_faq, cle_faq)
-        if has(faq_lue) { return discord_reponse_message("❓ **" + question + "**\n" + integration_texte_sans_mentions(unwrap_or(faq_lue, ""))) }
-        return discord_reponse_ephemere("❌ Aucune réponse FAQ pour cette question.")
+        if has(faq_lue) { return discord_reponse_message(carte_nolcbot("❓", "FAQ", "│ **" + question + "**\n" + integration_texte_sans_mentions(unwrap_or(faq_lue, "")))) }
+        return discord_reponse_ephemere(carte_erreur("Aucune réponse FAQ pour cette question."))
     }
     if nom == "faq_ai" {
         let guild_faq_ai = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let question_faq_ai = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
-        if guild_faq_ai == "" or question_faq_ai == "" or len(question_faq_ai) > 500 { return discord_reponse_ephemere("❌ Question FAQ invalide.") }
+        if guild_faq_ai == "" or question_faq_ai == "" or len(question_faq_ai) > 500 { return discord_reponse_ephemere(carte_erreur("Question FAQ invalide.")) }
         let direct_faq_ai = store_lire(guild_faq_ai, "faq." + lower(question_faq_ai))
-        if has(direct_faq_ai) { return discord_reponse_message("❓ " + unwrap_or(direct_faq_ai, "")) }
+        if has(direct_faq_ai) { return discord_reponse_message(carte_nolcbot("❓", "FAQ", "│ " + unwrap_or(direct_faq_ai, ""))) }
         let entries_faq_ai = store_lister_prefixe(guild_faq_ai, "faq.", 50)
-        if not has(entries_faq_ai) { return discord_reponse_ephemere("❓ La FAQ de ce serveur est vide.") }
+        if not has(entries_faq_ai) { return discord_reponse_ephemere(carte_info("❓", "FAQ", "La FAQ de ce serveur est vide.")) }
         let ai_faq_active = store_lire(guild_faq_ai, "ai.enabled")
-        if has(ai_faq_active) and unwrap_or(ai_faq_active, "") == "false" { return discord_reponse_ephemere("❓ Réponse absente. La recherche IA FAQ est désactivée pour ce serveur.") }
+        if has(ai_faq_active) and unwrap_or(ai_faq_active, "") == "false" { return discord_reponse_ephemere(carte_info("❓", "FAQ IA", "Réponse absente. La recherche IA FAQ est désactivée pour ce serveur.")) }
         let auteur_faq_ai = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if store_compter_recent(guild_faq_ai, "ai_user:" + auteur_faq_ai, 60) >= 5 { return discord_reponse_ephemere("⏳ Limite IA atteinte : 5 requêtes par minute.") }
+        if store_compter_recent(guild_faq_ai, "ai_user:" + auteur_faq_ai, 60) >= 5 { return discord_reponse_ephemere(carte_info("⏳", "Limite IA", "5 requêtes par minute.")) }
         let _faq_ai_usage = store_log_action(guild_faq_ai, auteur_faq_ai, "ai_user:" + auteur_faq_ai, "", "Recherche FAQ IA")
         let prompt_faq_ai = "Réponds uniquement avec la réponse FAQ la plus pertinente, ou dis exactement 'Aucune réponse trouvée' si aucune entrée ne correspond. Question : " + question_faq_ai + "\nEntrées FAQ :\n" + unwrap_or(entries_faq_ai, "")
         let resultat_faq_ai = integration_ai(guild_faq_ai, prompt_faq_ai)
-        if has(resultat_faq_ai) { return discord_reponse_message("🤖 " + integration_texte_sans_mentions(unwrap_or(resultat_faq_ai, ""))) }
-        return discord_reponse_ephemere("❌ Recherche IA indisponible.")
+        if has(resultat_faq_ai) { return discord_reponse_message(carte_nolcbot("🤖", "FAQ IA", "│ " + integration_texte_sans_mentions(unwrap_or(resultat_faq_ai, "")))) }
+        return discord_reponse_ephemere(carte_erreur("Recherche IA indisponible."))
     }
     if nom == "voice" {
         let action_voice = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "create")
         let guild_voice = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user_voice = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if guild_voice == "" or user_voice == "" { return discord_reponse_ephemere("❌ Cette commande doit être utilisée sur un serveur.") }
+        if guild_voice == "" or user_voice == "" { return discord_reponse_ephemere(carte_info("🏠", "Serveur requis", "Cette commande doit être utilisée sur un serveur.")) }
         if action_voice == "create" {
             let nom_salon = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "Vocal temporaire")
             let categorie = unwrap_or(store_lire(guild_voice, "voice.temp_category"), "")
             let tok_voice = bot_token()
-            if not has(tok_voice) { return discord_reponse_ephemere("❌ Token Discord indisponible.") }
+            if not has(tok_voice) { return discord_reponse_ephemere(carte_erreur("Token Discord indisponible.")) }
             let cree = discord_creer_salon_vocal(unwrap_or(tok_voice, ""), guild_voice, nom_salon, categorie)
-            if not has(cree) { return discord_reponse_ephemere("❌ Impossible de créer le salon vocal.") }
+            if not has(cree) { return discord_reponse_ephemere(carte_erreur("Impossible de créer le salon vocal.")) }
             let salon_cree = unwrap_or(cree, "")
             if not store_configurer(guild_voice, "voice.temp." + salon_cree, user_voice) {
                 let _rollback_voice = discord_supprimer_salon(unwrap_or(tok_voice, ""), salon_cree)
-                return discord_reponse_ephemere("❌ Impossible d’enregistrer le salon temporaire.")
+                return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer le salon temporaire."))
             }
             let _member_voice = store_configurer(guild_voice, "voice.temp.member." + salon_cree + "." + user_voice, "1")
             let deplace = discord_deplacer_membre_vocal(unwrap_or(tok_voice, ""), guild_voice, user_voice, salon_cree)
             let _audit_voice = store_log_action(guild_voice, user_voice, "voice_temp_create", salon_cree, nom_salon)
-            if deplace { return discord_reponse_message("🔊 Salon vocal créé : <#" + salon_cree + ">") }
-            return discord_reponse_message("🔊 Salon vocal créé : <#" + salon_cree + "> (déplacement automatique impossible)")
+            if deplace { return discord_reponse_message(carte_nolcbot("🔊", "Salon vocal créé", "│ <#" + salon_cree + ">")) }
+            return discord_reponse_message(carte_nolcbot("🔊", "Salon vocal créé", "│ <#" + salon_cree + ">\n│ Déplacement automatique impossible."))
         }
         if action_voice == "delete" {
             if not acl_autorise(req.corps, "admin") { return acl_refus("admin") }
             let salon_supprime = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
-            if not has(store_lire(guild_voice, "voice.temp." + salon_supprime)) { return discord_reponse_ephemere("⛔ Ce salon n’est pas enregistré comme salon temporaire du bot.") }
+            if not has(store_lire(guild_voice, "voice.temp." + salon_supprime)) { return discord_reponse_ephemere(carte_info("⛔", "Salon non temporaire", "Ce salon n’est pas enregistré comme salon temporaire du bot.")) }
             let tok_delete = bot_token()
-            if not has(tok_delete) or not discord_supprimer_salon(unwrap_or(tok_delete, ""), salon_supprime) { return discord_reponse_ephemere("❌ Suppression impossible.") }
+            if not has(tok_delete) or not discord_supprimer_salon(unwrap_or(tok_delete, ""), salon_supprime) { return discord_reponse_ephemere(carte_erreur("Suppression impossible.")) }
             let _forget_voice = store_supprimer(guild_voice, "voice.temp." + salon_supprime)
             let _audit_voice_del = store_log_action(guild_voice, user_voice, "voice_temp_delete", salon_supprime, "Salon supprimé par un administrateur")
-            return discord_reponse_message("🗑️ Salon vocal supprimé.")
+            return discord_reponse_message(carte_ok("Salon vocal supprimé."))
         }
-        return discord_reponse_ephemere("Usage : `/voice create nom` ou `/voice delete salon`.")
+        return discord_reponse_ephemere(carte_usage("/voice create nom ou /voice delete salon"))
     }
     if nom == "music" {
         let action_music = lower(unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "status"))
         let guild_music = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let user_music = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
-        if guild_music == "" { return discord_reponse_ephemere("❌ Cette commande doit être utilisée sur un serveur.") }
+        if guild_music == "" { return discord_reponse_ephemere(carte_info("🏠", "Serveur requis", "Cette commande doit être utilisée sur un serveur.")) }
         if action_music == "add" {
             let url_music = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
-            if url_music == "" or len(url_music) > 500 or (not starts_with(url_music, "https://") and not starts_with(url_music, "http://")) { return discord_reponse_ephemere("❌ Fournis une URL HTTP(S) valide.") }
+            if url_music == "" or len(url_music) > 500 or (not starts_with(url_music, "https://") and not starts_with(url_music, "http://")) { return discord_reponse_ephemere(carte_erreur("Fournis une URL HTTP(S) valide.")) }
             var index_music = 1
             while has(store_lire(guild_music, "music.queue." + text(index_music))) and index_music < 50 { index_music = index_music + 1 }
-            if index_music > 49 { return discord_reponse_ephemere("❌ La file musicale est pleine (50 titres maximum).") }
+            if index_music > 49 { return discord_reponse_ephemere(carte_erreur("La file musicale est pleine — 50 titres maximum.")) }
             if store_configurer(guild_music, "music.queue." + text(index_music), url_music) {
                 let _music_log = store_log_action(guild_music, user_music, "music_add", url_music, "Ajout à la file persistante")
-                return discord_reponse_message("🎵 Ajouté à la file musicale (#" + text(index_music) + "). La lecture audio sera assurée par l’adaptateur vocal configuré.")
+                return discord_reponse_message(carte_nolcbot("🎵", "Piste ajoutée", ligne_carte("Position", text(index_music)) + "│ Lecture assurée par l’adaptateur vocal configuré."))
             }
-            return discord_reponse_ephemere("❌ Impossible d’enregistrer la piste.")
+            return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer la piste."))
         }
         if action_music == "list" {
             let file_music = store_lister_prefixe(guild_music, "music.queue.", 50)
-            if has(file_music) { return discord_reponse_message("🎵 File musicale persistante :\n" + unwrap_or(file_music, "")) }
-            return discord_reponse_message("🎵 La file musicale est vide.")
+            if has(file_music) { return discord_reponse_message(carte_nolcbot("🎵", "File musicale", unwrap_or(file_music, ""))) }
+            return discord_reponse_message(carte_info("🎵", "Musique", "La file musicale est vide."))
         }
         if action_music == "loop" {
             if not acl_admin(req.corps) { return acl_refus("admin") }
             let actuel_loop = unwrap_or(store_lire(guild_music, "music.loop"), "false")
             var nouveau_loop = "true"
             if actuel_loop == "true" { nouveau_loop = "false" }
-            if store_configurer(guild_music, "music.loop", nouveau_loop) { return discord_reponse_message("🔁 Boucle musicale : " + nouveau_loop + ".") }
-            return discord_reponse_ephemere("❌ Impossible de modifier la boucle musicale.")
+            if store_configurer(guild_music, "music.loop", nouveau_loop) { return discord_reponse_message(carte_nolcbot("🔁", "Boucle musicale", ligne_carte("État", nouveau_loop))) }
+            return discord_reponse_ephemere(carte_erreur("Impossible de modifier la boucle musicale."))
         }
         if action_music == "shuffle" {
             if not acl_admin(req.corps) { return acl_refus("admin") }
             var total_music = 0
             while total_music < 50 and has(store_lire(guild_music, "music.queue." + text(total_music + 1))) { total_music = total_music + 1 }
-            if total_music < 2 { return discord_reponse_message("🔀 Pas assez de pistes pour mélanger la file.") }
+            if total_music < 2 { return discord_reponse_message(carte_info("🔀", "Musique", "Pas assez de pistes pour mélanger la file.")) }
             var position_music = total_music
             while position_music > 1 {
                 let choix_music = de_aleatoire(position_music)
@@ -1046,14 +1086,14 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
                 position_music = position_music - 1
             }
             let _shuffle_log = store_log_action(guild_music, user_music, "music_shuffle", "", "File mélangée")
-            return discord_reponse_message("🔀 File musicale mélangée.")
+            return discord_reponse_message(carte_ok("File musicale mélangée."))
         }
         if action_music == "vote" {
             let premiere_vote = store_lire(guild_music, "music.queue.1")
-            if not has(premiere_vote) { return discord_reponse_message("🎵 La file musicale est vide.") }
+            if not has(premiere_vote) { return discord_reponse_message(carte_info("🎵", "Musique", "La file musicale est vide.")) }
             let cle_vote = "music.votes." + hash_texte(unwrap_or(premiere_vote, "")) + "." + user_music
-            if has(store_lire(guild_music, cle_vote)) { return discord_reponse_ephemere("🗳️ Tu as déjà voté pour cette piste.") }
-            if not store_configurer(guild_music, cle_vote, "1") { return discord_reponse_ephemere("❌ Vote impossible à enregistrer.") }
+            if has(store_lire(guild_music, cle_vote)) { return discord_reponse_ephemere(carte_info("🗳️", "Vote musical", "Tu as déjà voté pour cette piste.")) }
+            if not store_configurer(guild_music, cle_vote, "1") { return discord_reponse_ephemere(carte_erreur("Vote impossible à enregistrer.")) }
             let seuil_vote = unwrap_or(parse_int(unwrap_or(store_lire(guild_music, "music.vote_threshold"), "3")), 3)
             let votes = store_compter_cles_prefixe(guild_music, "music.votes." + hash_texte(unwrap_or(premiere_vote, "")) + ".")
             if seuil_vote > 0 and votes >= seuil_vote {
@@ -1067,15 +1107,15 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
                     suite_vote = store_lire(guild_music, "music.queue." + text(index_vote + 1))
                 }
                 let _vote_last = store_supprimer(guild_music, "music.queue." + text(index_vote))
-                return discord_reponse_message("🗳️ Seuil atteint : piste passée automatiquement.")
+                return discord_reponse_message(carte_ok("Seuil atteint : piste passée automatiquement."))
             }
-            return discord_reponse_message("🗳️ Vote enregistré (" + text(votes) + "/" + text(seuil_vote) + ").")
+            return discord_reponse_message(carte_nolcbot("🗳️", "Vote enregistré", ligne_carte("Progression", text(votes) + "/" + text(seuil_vote))))
         }
         if action_music == "stop" or action_music == "skip" {
             if not acl_admin(req.corps) { return acl_refus("admin") }
-            if action_music == "stop" { let _stop = store_supprimer_prefixe(guild_music, "music.queue."); let _stop_current = store_supprimer(guild_music, "music.current"); return discord_reponse_message("⏹️ Lecture arrêtée et file vidée.") }
+            if action_music == "stop" { let _stop = store_supprimer_prefixe(guild_music, "music.queue."); let _stop_current = store_supprimer(guild_music, "music.current"); return discord_reponse_message(carte_ok("Lecture arrêtée et file vidée.")) }
             let premiere = store_lire(guild_music, "music.queue.1")
-            if not has(premiere) { return discord_reponse_message("🎵 La file musicale est vide.") }
+            if not has(premiere) { return discord_reponse_message(carte_info("🎵", "Musique", "La file musicale est vide.")) }
             let boucle_music = unwrap_or(store_lire(guild_music, "music.loop"), "false") == "true"
             var index_skip = 1
             while index_skip < 50 {
@@ -1083,10 +1123,10 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
                 if has(suivante) { let _decale = store_configurer(guild_music, "music.queue." + text(index_skip), unwrap_or(suivante, "")) } else { if boucle_music { let _boucle = store_configurer(guild_music, "music.queue." + text(index_skip), unwrap_or(premiere, "")) } else { let _fin = store_supprimer(guild_music, "music.queue." + text(index_skip)) }; break }
                 index_skip = index_skip + 1
             }
-            return discord_reponse_message("⏭️ Piste retirée de la file. L’adaptateur audio peut prendre la suivante.")
+            return discord_reponse_message(carte_ok("Piste retirée de la file. L’adaptateur audio peut prendre la suivante."))
         }
-        if action_music == "status" { return discord_reponse_message("🎵 File persistante active. Lecture audio : adaptateur UDP/Opus à configurer.") }
-        return discord_reponse_ephemere("Usage : `/music add|list|skip|stop|loop|shuffle|vote|status`.")
+        if action_music == "status" { return discord_reponse_message(carte_nolcbot("🎵", "Statut musique", "│ File persistante active.\n│ Lecture audio : adaptateur UDP/Opus à configurer.")) }
+        return discord_reponse_ephemere(carte_usage("/music add|list|skip|stop|loop|shuffle|vote|status"))
     }
     if nom == "aclrole" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -1097,12 +1137,12 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         var permission_valide_acl = false
         var index_acl = 0
         while index_acl < len(permissions_acl) { if permission_acl == get(permissions_acl, index_acl) { permission_valide_acl = true; break }; index_acl = index_acl + 1 }
-        if not permission_valide_acl or role_acl == "" or guild_acl == "" { return discord_reponse_ephemere("Usage : `/aclrole permission rôle`. Permissions : admin, ban, kick, mute, warn, clear, slowmode, lock, unban.") }
+        if not permission_valide_acl or role_acl == "" or guild_acl == "" { return discord_reponse_ephemere(carte_usage("/aclrole permission rôle — admin, ban, kick, mute, warn, clear, slowmode, lock, unban")) }
         if store_configurer(guild_acl, "acl.role." + permission_acl, role_acl) {
             let _audit_acl_role = store_log_action(guild_acl, unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "acl_role_config", permission_acl, "Rôle Discord " + role_acl + " enregistré dans SQLite")
-            return discord_reponse_message("✅ Le rôle <@&" + role_acl + "> est maintenant utilisé pour la permission **" + permission_acl + "**. La configuration est persistée dans SQLite.")
+            return discord_reponse_message(carte_nolcbot("🛡️", "ACL enregistrée", "│ **Rôle** <@&" + role_acl + ">\n" + ligne_carte("Permission", permission_acl)))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer le rôle ACL.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer le rôle ACL."))
     }
     if nom == "groupe" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -1111,7 +1151,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let valeur = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.1.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         if sous == "liste" {
-            if guild == "" { return discord_reponse_ephemere("Cette commande doit être utilisée sur un serveur.") }
+            if guild == "" { return discord_reponse_ephemere(carte_info("🏠", "Serveur requis", "Cette commande doit être utilisée sur un serveur.")) }
             let cles_groupes = store_lister_cles(guild)
             var reste_groupes = unwrap_or(cles_groupes, "")
             var affichage_groupes = "👥 Groupes ACL : "
@@ -1135,24 +1175,24 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             if not trouve_groupe { affichage_groupes += "aucun groupe configuré" }
             return discord_reponse_ephemere(affichage_groupes)
         }
-        if sous == "" or groupe == "" or guild == "" { return discord_reponse_ephemere("Usage : `/groupe role groupe rôle`.") }
+        if sous == "" or groupe == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/groupe role groupe rôle")) }
         if sous == "show" {
             let role = store_lire(guild, "acl.group." + groupe + ".role")
-            if has(role) { return discord_reponse_ephemere("Groupe `" + groupe + "` → rôle Discord `" + unwrap_or(role, "") + "`.") }
-            return discord_reponse_ephemere("Groupe introuvable.")
+            if has(role) { return discord_reponse_ephemere(carte_nolcbot("👥", "Groupe ACL", ligne_carte("Groupe", groupe) + ligne_carte("Rôle Discord", unwrap_or(role, "")))) }
+            return discord_reponse_ephemere(carte_erreur("Groupe introuvable."))
         }
         if sous == "supprimer" {
             if store_supprimer_prefixe(guild, "acl.group." + groupe + ".") {
                 let _log = store_log_action(guild, unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "acl_group_delete", groupe, "Suppression du groupe et de ses permissions")
-                return discord_reponse_message("✅ Groupe `" + groupe + "` supprimé.")
+                return discord_reponse_message(carte_nolcbot("👥", "Groupe supprimé", ligne_carte("Groupe", groupe)))
             }
-            return discord_reponse_ephemere("❌ Impossible de supprimer le groupe.")
+            return discord_reponse_ephemere(carte_erreur("Impossible de supprimer le groupe."))
         }
-        if valeur == "" { return discord_reponse_ephemere("Usage : `/groupe role groupe rôle`.") }
+        if valeur == "" { return discord_reponse_ephemere(carte_usage("/groupe role groupe rôle")) }
         if sous == "role" and store_configurer(guild, "acl.group." + groupe + ".role", valeur) {
-            return discord_reponse_message("✅ Le groupe `" + groupe + "` est lié au rôle Discord `" + valeur + "`.")
+            return discord_reponse_message(carte_nolcbot("👥", "Groupe lié", ligne_carte("Groupe", groupe) + ligne_carte("Rôle Discord", valeur)))
         }
-        return discord_reponse_ephemere("❌ Groupe ou sous-commande inconnue.")
+        return discord_reponse_ephemere(carte_erreur("Groupe ou sous-commande inconnue."))
     }
     if nom == "permission" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -1161,7 +1201,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let permission = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.1.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         if sous == "liste" {
-            if groupe == "" or guild == "" { return discord_reponse_ephemere("Usage : `/permission liste groupe`. ") }
+            if groupe == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/permission liste groupe")) }
             let permissions = ["admin", "ban", "unban", "kick", "mute", "unmute", "warn", "clear", "slowmode", "lock", "unlock", "nickname", "note", "ticket_close"]
             var affichage = "🔐 Permissions de `" + groupe + "` : "
             var trouve = false
@@ -1179,23 +1219,23 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             return discord_reponse_ephemere(affichage)
         }
         if sous == "show" {
-            if groupe == "" or permission == "" or guild == "" { return discord_reponse_ephemere("Usage : `/permission show groupe permission`.") }
+            if groupe == "" or permission == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/permission show groupe permission")) }
             let active = store_lire(guild, "acl.group." + groupe + ".permission." + permission)
-            if has(active) { return discord_reponse_ephemere("✅ `" + permission + "` est active pour `" + groupe + "`.") }
-            return discord_reponse_ephemere("Permission non configurée.")
+            if has(active) { return discord_reponse_ephemere(carte_nolcbot("🛡️", "Permission active", ligne_carte("Groupe", groupe) + ligne_carte("Permission", permission))) }
+            return discord_reponse_ephemere(carte_info("🛡️", "Permission", "Permission non configurée."))
         }
         if sous == "retirer" {
-            if groupe == "" or permission == "" or guild == "" { return discord_reponse_ephemere("Usage : `/permission retirer groupe permission`.") }
+            if groupe == "" or permission == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/permission retirer groupe permission")) }
             let ok = store_supprimer(guild, "acl.group." + groupe + ".permission." + permission)
             let groupes_avant = unwrap_or(store_lire(guild, "acl.permission." + permission + ".groups"), "")
             let groupes_apres = liste_virgules_retirer(groupes_avant, groupe)
             var ok_lookup = true
             if groupes_apres == "" { ok_lookup = store_supprimer(guild, "acl.permission." + permission + ".groups") }
             else { ok_lookup = store_configurer(guild, "acl.permission." + permission + ".groups", groupes_apres) }
-            if ok and ok_lookup { return discord_reponse_message("✅ Permission retirée.") }
-            return discord_reponse_ephemere("❌ Impossible de retirer la permission.")
+            if ok and ok_lookup { return discord_reponse_message(carte_nolcbot("🛡️", "Permission retirée", ligne_carte("Groupe", groupe) + ligne_carte("Permission", permission))) }
+            return discord_reponse_ephemere(carte_erreur("Impossible de retirer la permission."))
         }
-        if sous != "ajouter" or groupe == "" or permission == "" or guild == "" { return discord_reponse_ephemere("Usage : `/permission ajouter groupe permission`.") }
+        if sous != "ajouter" or groupe == "" or permission == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/permission ajouter groupe permission")) }
         let ok_group = store_configurer(guild, "acl.group." + groupe + ".permission." + permission, "true")
         let groupes_existants = unwrap_or(store_lire(guild, "acl.permission." + permission + ".groups"), "")
         var groupes_nouveaux = groupes_existants
@@ -1203,24 +1243,24 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         else if not contains("," + groupes_nouveaux + ",", "," + groupe + ",") { groupes_nouveaux += "," + groupe }
         let ok_lookup = store_configurer(guild, "acl.permission." + permission + ".groups", groupes_nouveaux)
         if ok_group and ok_lookup {
-            return discord_reponse_message("✅ Permission `" + permission + "` ajoutée au groupe `" + groupe + "`.")
+            return discord_reponse_message(carte_nolcbot("🛡️", "Permission ajoutée", ligne_carte("Groupe", groupe) + ligne_carte("Permission", permission)))
         }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer la permission.")
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer la permission."))
     }
     if nom == "config" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let cle = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let valeur = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
-        if cle == "" or valeur == "" or guild == "" { return discord_reponse_ephemere("Usage : `/config clé valeur`.") }
-        if starts_with(cle, "_system.") or cle == "schema_version" { return discord_reponse_ephemere("⛔ Cette clé est réservée au système.") }
-        if cle == "prefix" and (len(valeur) < 1 or len(valeur) > 8 or contains(valeur, " ") or contains(valeur, "\n")) { return discord_reponse_ephemere("⛔ Le préfixe doit contenir entre 1 et 8 caractères, sans espace.") }
+        if cle == "" or valeur == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/config clé valeur")) }
+        if starts_with(cle, "_system.") or cle == "schema_version" { return discord_reponse_ephemere(carte_info("⛔", "Clé réservée", "Cette clé est réservée au système.")) }
+        if cle == "prefix" and (len(valeur) < 1 or len(valeur) > 8 or contains(valeur, " ") or contains(valeur, "\n")) { return discord_reponse_ephemere(carte_info("⛔", "Préfixe invalide", "Le préfixe doit contenir entre 1 et 8 caractères, sans espace.")) }
         let cle_normale = lower(cle)
         if contains(cle_normale, "token") or contains(cle_normale, "secret") or contains(cle_normale, "password") or contains(cle_normale, "private") or contains(cle_normale, "credential") or contains(cle_normale, "api_key") or contains(cle_normale, "webhook") {
-            return discord_reponse_ephemere("⛔ Les secrets doivent rester dans les variables d’environnement.")
+            return discord_reponse_ephemere(carte_info("⛔", "Secret refusé", "Les secrets doivent rester dans les variables d’environnement."))
         }
-        if store_configurer(guild, cle, valeur) { return discord_reponse_message("✅ Configuration enregistrée : `" + cle + "`. ") }
-        return discord_reponse_ephemere("❌ Impossible d’enregistrer la configuration.")
+        if store_configurer(guild, cle, valeur) { return discord_reponse_message(carte_nolcbot("⚙️", "Configuration enregistrée", ligne_carte("Clé", cle))) }
+        return discord_reponse_ephemere(carte_erreur("Impossible d’enregistrer la configuration."))
     }
     if nom == "config_get" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -1228,18 +1268,18 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let cle_normale = lower(cle)
         if cle_normale == "verification.code" or contains(cle_normale, "token") or contains(cle_normale, "secret") or contains(cle_normale, "password") or contains(cle_normale, "private") or contains(cle_normale, "credential") or contains(cle_normale, "api_key") or contains(cle_normale, "webhook") {
-            return discord_reponse_ephemere("⛔ Les secrets ne peuvent pas être lus via Discord.")
+            return discord_reponse_ephemere(carte_info("⛔", "Secret masqué", "Les secrets ne peuvent pas être lus via Discord."))
         }
         let valeur = store_lire(guild, cle)
-        if has(valeur) { return discord_reponse_ephemere("⚙️ `" + cle + "` = `" + unwrap_or(valeur, "") + "`") }
-        return discord_reponse_ephemere("Aucune valeur enregistrée pour `" + cle + "`.")
+        if has(valeur) { return discord_reponse_ephemere(carte_nolcbot("⚙️", "Configuration", ligne_carte("Clé", cle) + ligne_carte("Valeur", unwrap_or(valeur, "")))) }
+        return discord_reponse_ephemere(carte_nolcbot("⚙️", "Configuration", ligne_carte("Clé", cle) + "│ Aucune valeur enregistrée."))
     }
     if nom == "config_list" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
         let cles = store_lister_cles(guild)
-        if has(cles) { return discord_reponse_ephemere("⚙️ Clés configurées (valeurs masquées) :\n" + unwrap_or(cles, "")) }
-        return discord_reponse_ephemere("Aucune clé personnalisée configurée.")
+        if has(cles) { return discord_reponse_ephemere(carte_nolcbot("⚙️", "Clés configurées", "│ Valeurs sensibles masquées\n" + unwrap_or(cles, ""))) }
+        return discord_reponse_ephemere(carte_info("⚙️", "Configuration", "Aucune clé personnalisée configurée."))
     }
     if nom == "modules" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -1260,10 +1300,10 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         if not acl_admin(req.corps) { return acl_refus("admin") }
         let cle = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
-        if cle == "" or guild == "" { return discord_reponse_ephemere("Usage : `/config_delete clé`.") }
-        if starts_with(cle, "_system.") or cle == "schema_version" { return discord_reponse_ephemere("⛔ Cette clé est réservée au système.") }
-        if store_supprimer(guild, cle) { return discord_reponse_ephemere("✅ Réglage supprimé.") }
-        return discord_reponse_ephemere("❌ Impossible de supprimer le réglage.")
+        if cle == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/config_delete clé")) }
+        if starts_with(cle, "_system.") or cle == "schema_version" { return discord_reponse_ephemere(carte_info("⛔", "Clé réservée", "Cette clé est réservée au système.")) }
+        if store_supprimer(guild, cle) { return discord_reponse_ephemere(carte_ok("Réglage supprimé.")) }
+        return discord_reponse_ephemere(carte_erreur("Impossible de supprimer le réglage."))
     }
     if nom == "help" {
         return discord_reponse_message(aide_design())
@@ -1271,12 +1311,12 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     if nom == "nickname" {
         if not acl_autorise(req.corps, "nickname") { return acl_refus("nickname") }
         let surnom = unwrap_or(json_chemin_texte(req.corps, "data.options.1.value"), "")
-        if len(surnom) < 1 or len(surnom) > 32 { return discord_reponse_ephemere("❌ Le surnom doit contenir entre 1 et 32 caractères.") }
+        if len(surnom) < 1 or len(surnom) > 32 { return discord_reponse_ephemere(carte_erreur("Le surnom doit contenir entre 1 et 32 caractères.")) }
         if discord_modifier_surnom(req, surnom) {
             let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "nickname", interaction_cible(req), surnom)
-            return discord_reponse_message("✅ Surnom modifié.")
+            return discord_reponse_message(carte_ok("Surnom modifié."))
         }
-        return discord_reponse_ephemere("❌ Impossible de modifier le surnom. Vérifie la hiérarchie des rôles et la permission Manage Nicknames.")
+        return discord_reponse_ephemere(carte_erreur("Impossible de modifier le surnom. Vérifie la hiérarchie des rôles et la permission Manage Nicknames."))
     }
     if nom == "ban_temp" {
         if not acl_autorise(req.corps, "ban") { return acl_refus("ban") }
@@ -1285,17 +1325,17 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let auteur = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
         let cible = interaction_cible(req)
-        if secondes < 60 or secondes > 2419200 { return discord_reponse_ephemere("❌ La durée doit être comprise entre 60 secondes et 28 jours.") }
-        if guild == "" or auteur == "" or salon == "" or cible == "" { return discord_reponse_ephemere("❌ Serveur, membre ou salon invalide.") }
-        if not discord_bannir(req) { return discord_reponse_ephemere("❌ Bannissement impossible.") }
+        if secondes < 60 or secondes > 2419200 { return discord_reponse_ephemere(carte_erreur("La durée doit être comprise entre 60 secondes et 28 jours.")) }
+        if guild == "" or auteur == "" or salon == "" or cible == "" { return discord_reponse_ephemere(carte_erreur("Serveur, membre ou salon invalide.")) }
+        if not discord_bannir(req) { return discord_reponse_ephemere(carte_erreur("Bannissement impossible.")) }
         let programme = store_creer_rappel(guild, auteur, salon, "__noliae_unban|" + cible, epoch_maintenant() + secondes)
         if not programme {
             let tok = env("DISCORD_BOT_TOKEN")
             if has(tok) { let _rollback = discord_debannir_identifiant(unwrap_or(tok, ""), guild, cible) }
-            return discord_reponse_ephemere("❌ Programmation de l’expiration impossible : bannissement annulé.")
+            return discord_reponse_ephemere(carte_erreur("Programmation de l’expiration impossible : bannissement annulé."))
         }
         let _log_temp = store_log_action(guild, auteur, "ban_temp", cible, text(secondes) + " seconde(s)")
-        return discord_reponse_message("✅ Membre banni temporairement pour " + text(secondes) + " seconde(s).")
+        return discord_reponse_message(carte_nolcbot("🔨", "Bannissement temporaire", ligne_carte("Durée", text(secondes) + "s")))
     }
     if nom == "ban" or nom == "kick" or nom == "unban" or nom == "mute" or nom == "unmute" or nom == "clear" or nom == "slowmode" {
         if not acl_autorise(req.corps, nom) { return acl_refus(nom) }
@@ -1304,27 +1344,27 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
                 let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "ban", interaction_cible(req), "Commande /ban")
                 let tok = env("DISCORD_BOT_TOKEN")
                 if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), "BAN", interaction_cible(req), "Commande /ban") }
-                return discord_reponse_message("✅ Membre banni.")
+                return discord_reponse_message(carte_ok("Membre banni."))
             }
-            return discord_reponse_ephemere("❌ Échec du bannissement. Vérifie l’ID, les permissions et la hiérarchie des rôles.")
+            return discord_reponse_ephemere(carte_erreur("Échec du bannissement. Vérifie l’ID, les permissions et la hiérarchie des rôles."))
         }
         if nom == "kick" {
             if discord_expulser(req) {
                 let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "kick", interaction_cible(req), "Commande /kick")
                 let tok = env("DISCORD_BOT_TOKEN")
                 if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), "KICK", interaction_cible(req), "Commande /kick") }
-                return discord_reponse_message("✅ Membre expulsé.")
+                return discord_reponse_message(carte_ok("Membre expulsé."))
             }
-            return discord_reponse_ephemere("❌ Échec de l’expulsion. Vérifie l’ID, les permissions et la hiérarchie des rôles.")
+            return discord_reponse_ephemere(carte_erreur("Échec de l’expulsion. Vérifie l’ID, les permissions et la hiérarchie des rôles."))
         }
         if nom == "unban" {
             if discord_debannir(req) {
                 let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "unban", interaction_cible(req), "Commande /unban")
                 let tok = env("DISCORD_BOT_TOKEN")
                 if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), "UNBAN", interaction_cible(req), "Commande /unban") }
-                return discord_reponse_message("✅ Membre débanni.")
+                return discord_reponse_message(carte_ok("Membre débanni."))
             }
-            return discord_reponse_ephemere("❌ Échec du débannissement.")
+            return discord_reponse_ephemere(carte_erreur("Échec du débannissement."))
         }
         if nom == "slowmode" {
             let secondes = unwrap_or(json_chemin_int(req.corps, "data.options.0.value"), 0)
@@ -1334,9 +1374,9 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
                 let _log = store_log_action(guild, actor, "slowmode", unwrap_or(json_chemin_texte(req.corps, "channel_id"), ""), text(secondes) + " seconde(s)")
                 let tok = env("DISCORD_BOT_TOKEN")
                 if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), "SLOWMODE", unwrap_or(json_chemin_texte(req.corps, "channel_id"), ""), text(secondes) + " seconde(s)") }
-                return discord_reponse_message("✅ Mode lent réglé sur " + text(secondes) + " seconde(s).")
+                return discord_reponse_message(carte_nolcbot("🐢", "Mode lent réglé", ligne_carte("Durée", text(secondes) + "s")))
             }
-            return discord_reponse_ephemere("❌ Impossible de modifier le mode lent.")
+            return discord_reponse_ephemere(carte_erreur("Impossible de modifier le mode lent."))
         }
         if nom == "clear" {
             let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
@@ -1349,39 +1389,39 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
                     if supprimes > 0 {
                         let _log_bulk = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "clear_bulk", salon, text(supprimes) + " messages supprimés")
                         let _notify_bulk = notifier_log_serveur(unwrap_or(token, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), "CLEAR", salon, text(supprimes) + " messages supprimés")
-                        return discord_reponse_message("✅ " + text(supprimes) + " messages supprimés.")
+                        return discord_reponse_message(carte_nolcbot("🧹", "Messages supprimés", ligne_carte("Total", text(supprimes))))
                     }
                 }
-                return discord_reponse_ephemere("❌ Suppression groupée impossible. Discord limite cette action aux messages récents.")
+                return discord_reponse_ephemere(carte_erreur("Suppression groupée impossible. Discord limite cette action aux messages récents."))
             }
             if has(token) and discord_supprimer_message(unwrap_or(token, ""), salon, message) {
                 let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "clear", message, "Suppression message")
                 let _notify = notifier_log_serveur(unwrap_or(token, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), "CLEAR", message, "Suppression message")
-                return discord_reponse_message("✅ Message supprimé.")
+                return discord_reponse_message(carte_ok("Message supprimé."))
             }
-            return discord_reponse_ephemere("❌ Impossible de supprimer ce message.")
+            return discord_reponse_ephemere(carte_erreur("Impossible de supprimer ce message."))
         }
         if nom == "unmute" {
             if discord_timeout(req, 0) {
                 let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "unmute", interaction_cible(req), "Timeout retiré")
                 let tok = env("DISCORD_BOT_TOKEN")
                 if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), "UNMUTE", interaction_cible(req), "Timeout retiré") }
-                return discord_reponse_message("✅ Timeout retiré.")
+                return discord_reponse_message(carte_ok("Timeout retiré."))
             }
-            return discord_reponse_ephemere("❌ Impossible de retirer le timeout.")
+            return discord_reponse_ephemere(carte_erreur("Impossible de retirer le timeout."))
         }
         if nom == "mute" {
             let secondes = unwrap_or(json_chemin_int(req.corps, "data.options.1.value"), 0)
-            if secondes < 1 or secondes > 2419200 { return discord_reponse_ephemere("La durée doit être comprise entre 1 seconde et 28 jours.") }
+            if secondes < 1 or secondes > 2419200 { return discord_reponse_ephemere(carte_erreur("La durée doit être comprise entre 1 seconde et 28 jours.")) }
             if discord_timeout(req, secondes) {
                 let _log = store_log_action(unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), unwrap_or(json_chemin_texte(req.corps, "member.user.id"), ""), "mute", interaction_cible(req), text(secondes) + " seconde(s)")
                 let tok = env("DISCORD_BOT_TOKEN")
                 if has(tok) { let _notify = notifier_log_serveur(unwrap_or(tok, ""), unwrap_or(json_chemin_texte(req.corps, "guild_id"), ""), "MUTE", interaction_cible(req), text(secondes) + " seconde(s)") }
-                return discord_reponse_message("✅ Membre timeout pendant " + text(secondes) + " seconde(s).")
+                return discord_reponse_message(carte_nolcbot("🔇", "Timeout appliqué", ligne_carte("Durée", text(secondes) + "s")))
             }
-            return discord_reponse_ephemere("❌ Impossible d’appliquer le timeout.")
+            return discord_reponse_ephemere(carte_erreur("Impossible d’appliquer le timeout."))
         }
-        return discord_reponse_ephemere("⏳ Usage : `/mute membre secondes`.")
+        return discord_reponse_ephemere(carte_usage("/mute membre secondes"))
     }
     if nom == "ping" {
         return discord_reponse_message(carte_nolcbot("🏓", "Pong",
@@ -1411,7 +1451,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     }
     if nom == "roleinfo" {
         let role = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
-        if role == "" { return discord_reponse_ephemere("Usage : `/roleinfo rôle`.") }
+        if role == "" { return discord_reponse_ephemere(carte_usage("/roleinfo rôle")) }
         let nom_role = unwrap_or(json_chemin_texte(req.corps, "resolved.roles." + role + ".name"), "Rôle Discord")
         let couleur = unwrap_or(json_chemin_texte(req.corps, "resolved.roles." + role + ".color"), "0")
         return discord_reponse_ephemere(carte_nolcbot("🎭", "Rôle Discord",
@@ -1441,24 +1481,24 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     }
     if nom == "echo" {
         let msg = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
-        if msg == "" { return discord_reponse_ephemere("Rien à répéter.") }
+        if msg == "" { return discord_reponse_ephemere(carte_info("⌁", "Echo", "Rien à répéter.")) }
         return discord_reponse_message(msg)
     }
     if nom == "avatar" {
         let id = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let nom_utilisateur = unwrap_or(json_chemin_texte(req.corps, "member.user.username"), "Utilisateur")
         let hash = json_chemin_texte(req.corps, "member.user.avatar")
-        if has(hash) and unwrap_or(hash, "") != "" { return discord_reponse_message("🖼️ Avatar de " + nom_utilisateur + "\nhttps://cdn.discordapp.com/avatars/" + id + "/" + unwrap_or(hash, "") + ".png?size=4096") }
-        return discord_reponse_message("🖼️ Avatar de " + nom_utilisateur + "\nID : " + id + "\nAucun hash d’avatar personnalisé n’est présent dans cette interaction.")
+        if has(hash) and unwrap_or(hash, "") != "" { return discord_reponse_message(carte_nolcbot("🖼️", "Avatar", "│ **Utilisateur** " + nom_utilisateur + "\nhttps://cdn.discordapp.com/avatars/" + id + "/" + unwrap_or(hash, "") + ".png?size=4096")) }
+        return discord_reponse_message(carte_nolcbot("🖼️", "Avatar", "│ **Utilisateur** " + nom_utilisateur + "\n" + ligne_carte("ID", id) + "│ Aucun avatar personnalisé présent dans cette interaction."))
     }
     if nom == "banner" {
         let id = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "")
         let nom_utilisateur = unwrap_or(json_chemin_texte(req.corps, "member.user.username"), "Utilisateur")
         let hash = json_chemin_texte(req.corps, "member.user.banner")
-        if has(hash) and unwrap_or(hash, "") != "" { return discord_reponse_message("🎨 Bannière de " + nom_utilisateur + "\nhttps://cdn.discordapp.com/banners/" + id + "/" + unwrap_or(hash, "") + ".png?size=4096") }
-        return discord_reponse_ephemere("Aucune bannière personnalisée n’est présente dans cette interaction.")
+        if has(hash) and unwrap_or(hash, "") != "" { return discord_reponse_message(carte_nolcbot("🎨", "Bannière", "│ **Utilisateur** " + nom_utilisateur + "\nhttps://cdn.discordapp.com/banners/" + id + "/" + unwrap_or(hash, "") + ".png?size=4096")) }
+        return discord_reponse_ephemere(carte_info("🎨", "Bannière", "Aucune bannière personnalisée n’est présente dans cette interaction."))
     }
-    return discord_reponse_ephemere("Commande inconnue : /" + nom)
+    return discord_reponse_ephemere(carte_nolcbot("❔", "Commande inconnue", "│ /" + nom + "\n│ Utilise `/help` pour voir le catalogue."))
 }
 
 fn commandes_json() -> Text {
