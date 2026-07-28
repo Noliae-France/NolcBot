@@ -81,7 +81,7 @@ La CI publique est découpée pour garder des checks GitHub propres : `ci` est l
 
 Pipeline :
 
-- [`ci`](.github/workflows/ci.yml) : sur push et pull request, vérifie qu’aucun secret brut n’est versionné, installe Nolc, compile, teste et publie un artefact Linux.
+- [`ci`](.github/workflows/ci.yml) : sur push et pull request, vérifie qu’aucun secret brut n’est versionné, installe Nolc, compile, teste, publie un artefact Linux brut et prépare un paquet `nolcbot-linux-release-preview` prêt à télécharger.
 - [`discord-integration`](.github/workflows/discord-integration.yml) : lancement manuel uniquement, non bloquant pour les push/PR. Il utilise les **GitHub Secrets** pour tester SQLite, l’API Discord, l’application, le serveur de test, la présence du bot, l’enregistrement des commandes, une connexion Gateway courte, les actions Discord réelles, la mesure RAM/CPU et OpenAI si la clé est fournie.
 - [`release`](.github/workflows/release.yml) : sur tag `v*`, recompile, reteste, prépare l’artefact Linux et crée une GitHub Release.
 

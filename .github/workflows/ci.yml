@@ -53,3 +53,37 @@ jobs:
           name: nolcbot-linux
           path: dist/*
           if-no-files-found: error
+
+  release-preview:
+    name: release-preview
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nolcbot-linux
+          path: dist
+      - name: Préparer le paquet release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release/nolcbot-linux
+          cp dist/nolcbot-Linux release/nolcbot-linux/nolcbot
+          chmod +x release/nolcbot-linux/nolcbot
+          (cd release/nolcbot-linux && shasum -a 256 nolcbot > nolcbot.sha256)
+          cat > release/nolcbot-linux/manifest.txt <<EOF
+          NolcBot release preview
+          commit=${GITHUB_SHA}
+          ref=${GITHUB_REF_NAME}
+          platform=linux
+          artifact=nolcbot-linux
+          EOF
+          tar -C release -czf nolcbot-linux-release.tar.gz nolcbot-linux
+          shasum -a 256 nolcbot-linux-release.tar.gz > nolcbot-linux-release.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nolcbot-linux-release-preview
+          path: |
+            nolcbot-linux-release.tar.gz
+            nolcbot-linux-release.tar.gz.sha256
+          if-no-files-found: error
