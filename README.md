@@ -256,7 +256,9 @@ Démarrer l’endpoint d’interactions :
 Le serveur doit être placé derrière HTTPS pour l’URL d’interactions Discord.
 Une page de supervision est disponible sur `/dashboard`; les superviseurs Prometheus peuvent utiliser `/metrics`. Les métriques exposent notamment l’état du processus, l’intégrité SQLite, la version de schéma, l’âge du dernier tick Gateway, le nombre de serveurs connus et le volume de commandes sur la dernière heure. L’API authentifiée `GET /admin/guilds` liste les serveurs persistés, `GET /admin/config?guild=ID` liste les clés non sensibles d’un serveur, tandis que `POST /admin/config` permet de modifier une clé autorisée. Le dashboard propose aussi l’activation/désactivation directe des modules par serveur. Toutes ces routes exigent `X-Noliae-Admin`.
 
-Le dashboard permet aussi de customiser un overlay stream par serveur. L’URL publique `/overlay?guild=ID_DU_SERVEUR` est utilisable comme source navigateur OBS/Streamlabs. Les clés `overlay.title`, `overlay.subtitle`, `overlay.accent`, `overlay.position`, `overlay.width` et `overlay.opacity` sont stockées en SQLite.
+Le dashboard inclut un **Overlay Studio** pour créer des overlays Discord/OBS/Streamlabs par serveur. L’URL publique `/overlay?guild=ID_DU_SERVEUR&type=stream` est utilisable comme source navigateur, avec plusieurs types disponibles : `stream`, `welcome`, `stats`, `tickets` et `moderation`.
+
+Les clés `overlay.template`, `overlay.title`, `overlay.subtitle`, `overlay.accent`, `overlay.accent_secondary`, `overlay.background`, `overlay.position`, `overlay.width` et `overlay.opacity` sont stockées en SQLite. Le dashboard permet de les modifier sans toucher au `.env`.
 
 En mode Gateway, les salons d’accueil et de départ sont configurables avec `NOLIAE_WELCOME_CHANNEL_ID` et `NOLIAE_GOODBYE_CHANNEL_ID`.
 Les clés serveur `welcome_channel`, `goodbye_channel`, `welcome_message`, `goodbye_message` et `auto_role` configurées avec `/config` sont prioritaires sur ces valeurs globales.

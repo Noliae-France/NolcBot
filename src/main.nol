@@ -172,28 +172,93 @@ fn dashboard_html() -> Text {
         + "<section class=\"metrics\"><div class=\"card metric\"><small>Serveurs configurés</small><strong id=\"guildCount\">—</strong></div><div class=\"card metric\"><small>Modules disponibles</small><strong>9</strong></div><div class=\"card metric\"><small>API dashboard</small><strong>Active</strong></div><div class=\"card metric\"><small>Configuration</small><strong>SQLite</strong></div></section>"
         + "<section class=\"grid\"><div class=\"card\"><h2>Modules</h2><p class=\"muted\">Active ou coupe les fonctions par serveur.</p><div class=\"modules\"><div class=\"module\">Modération <i class=\"switch\"></i></div><div class=\"module\">Tickets <i class=\"switch\"></i></div><div class=\"module\">Communauté <i class=\"switch\"></i></div><div class=\"module\">Automod <i class=\"switch\"></i></div><div class=\"module\">Intégrations <i class=\"switch\"></i></div><div class=\"module\">Statistiques <i class=\"switch\"></i></div></div></div>"
         + "<div class=\"card\"><h2>Connexion</h2><p class=\"muted\">Saisis le secret administrateur actuel pour charger les serveurs.</p><input id=\"secret\" type=\"password\" placeholder=\"Secret dashboard\" autocomplete=\"off\"><div class=\"tools\"><button onclick=\"loadGuilds()\">Charger</button></div><select id=\"guild\" onchange=\"loadKeys()\"><option value=\"\">Choisir un serveur</option></select><p id=\"status\" class=\"muted\"></p></div></section>"
-        + "<section class=\"card\" style=\"margin-top:16px\"><h2>Overlays stream</h2><p class=\"muted\">Crée un overlay OBS/streamlabs custom par serveur. URL publique : <code id=\"overlayUrl\">/overlay?guild=ID</code></p><div class=\"tools\"><input id=\"ovTitle\" placeholder=\"Titre overlay\"><input id=\"ovSubtitle\" placeholder=\"Sous-titre\"><input id=\"ovAccent\" placeholder=\"#6674ff\"><select id=\"ovPosition\"><option>bottom-left</option><option>bottom-right</option><option>top-left</option><option>top-right</option><option>center</option></select><input id=\"ovWidth\" placeholder=\"largeur px\"><input id=\"ovOpacity\" placeholder=\"opacité 0.1-1\"><button onclick=\"saveOverlay()\">Sauver overlay</button><button onclick=\"openOverlay()\">Prévisualiser</button></div></section>"
+        + "<section class=\"card\" style=\"margin-top:16px\"><h2>Overlay Studio</h2><p class=\"muted\">Crée des overlays OBS/Streamlabs premium par serveur : stream, accueil, stats, tickets et modération. URL publique : <code id=\"overlayUrl\">/overlay?guild=ID&type=stream</code></p><div class=\"tools\"><select id=\"ovTemplate\" onchange=\"updateOverlayUrl()\"><option>stream</option><option>welcome</option><option>stats</option><option>tickets</option><option>moderation</option></select><input id=\"ovTitle\" placeholder=\"Titre overlay\"><input id=\"ovSubtitle\" placeholder=\"Sous-titre\"><input id=\"ovAccent\" placeholder=\"#6674ff\"><input id=\"ovAccent2\" placeholder=\"#35d18b\"><input id=\"ovBackground\" placeholder=\"#0b1020\"><select id=\"ovPosition\"><option>bottom-left</option><option>bottom-right</option><option>top-left</option><option>top-right</option><option>center</option></select><input id=\"ovWidth\" placeholder=\"largeur px\"><input id=\"ovOpacity\" placeholder=\"opacité 0.1-1\"><button onclick=\"saveOverlay()\">Sauver studio</button><button onclick=\"openOverlay()\">Prévisualiser</button></div><p class=\"muted\">Exemples : <code>/overlay?guild=ID&type=welcome</code> · <code>/overlay?guild=ID&type=stats</code> · <code>/overlay?guild=ID&type=tickets</code></p></section>"
         + "<section class=\"card\" style=\"margin-top:16px\"><h2>Configuration du serveur</h2><div class=\"tools\"><input id=\"key\" placeholder=\"Clé, ex. welcome_channel\"><input id=\"value\" placeholder=\"Valeur\"><button onclick=\"saveKey()\">Enregistrer</button><button class=\"danger\" onclick=\"deleteKey()\">Supprimer</button></div><pre id=\"keys\">Charge un serveur pour afficher sa configuration.</pre></section></main>"
-        + "<script>const q=id=>document.getElementById(id),headers=()=>({'X-Noliae-Admin':q('secret').value});async function loadGuilds(){let r=await fetch('/admin/guilds',{headers:headers()});if(!r.ok){q('status').textContent='Accès refusé';return}let j=await r.json();let a=j.guilds||[];q('guildCount').textContent=a.length;q('guild').innerHTML='<option value=\"\">Choisir un serveur</option>'+a.map(x=>'<option>'+x+'</option>').join('');q('status').textContent='Connecté';}async function loadKeys(){let g=q('guild').value;if(!g)return;let r=await fetch('/admin/config?guild='+encodeURIComponent(g),{headers:headers()});if(!r.ok)return;q('keys').textContent=((await r.json()).keys||[]).join('\\n')||'Aucune clé.';q('overlayUrl').textContent='/overlay?guild='+g;}async function saveKey(){let g=q('guild').value,k=q('key').value,v=q('value').value;if(!g||!k||!v)return;q('status').textContent=(await fetch('/admin/config',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k,value:v})})).status===204?'Configuration enregistrée':'Erreur';loadKeys()}async function deleteKey(){let g=q('guild').value,k=q('key').value;if(!g||!k||!confirm('Supprimer cette clé ?'))return;q('status').textContent=(await fetch('/admin/config/delete',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k})})).status===204?'Configuration supprimée':'Erreur';loadKeys()}async function saveOne(k,v){let g=q('guild').value;if(!g||!v)return false;let r=await fetch('/admin/config',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k,value:v})});return r.status===204}async function saveOverlay(){let ok=true;ok=await saveOne('overlay.title',q('ovTitle').value||'Noliae Live')&&ok;ok=await saveOne('overlay.subtitle',q('ovSubtitle').value||'Communauté Discord')&&ok;ok=await saveOne('overlay.accent',q('ovAccent').value||'#6674ff')&&ok;ok=await saveOne('overlay.position',q('ovPosition').value)&&ok;ok=await saveOne('overlay.width',q('ovWidth').value||'420')&&ok;ok=await saveOne('overlay.opacity',q('ovOpacity').value||'0.92')&&ok;q('status').textContent=ok?'Overlay enregistré':'Erreur overlay';loadKeys()}function openOverlay(){let g=q('guild').value;if(g)window.open('/overlay?guild='+encodeURIComponent(g),'_blank')}</script></html>"
+        + "<script>const q=id=>document.getElementById(id),headers=()=>({'X-Noliae-Admin':q('secret').value});function overlayType(){return q('ovTemplate')?q('ovTemplate').value:'stream'}function updateOverlayUrl(){let g=q('guild').value||'ID';q('overlayUrl').textContent='/overlay?guild='+g+'&type='+overlayType()}async function loadGuilds(){let r=await fetch('/admin/guilds',{headers:headers()});if(!r.ok){q('status').textContent='Accès refusé';return}let j=await r.json();let a=j.guilds||[];q('guildCount').textContent=a.length;q('guild').innerHTML='<option value=\"\">Choisir un serveur</option>'+a.map(x=>'<option>'+x+'</option>').join('');q('status').textContent='Connecté';updateOverlayUrl()}async function loadKeys(){let g=q('guild').value;if(!g)return;let r=await fetch('/admin/config?guild='+encodeURIComponent(g),{headers:headers()});if(!r.ok)return;q('keys').textContent=((await r.json()).keys||[]).join('\\n')||'Aucune clé.';updateOverlayUrl()}async function saveKey(){let g=q('guild').value,k=q('key').value,v=q('value').value;if(!g||!k||!v)return;q('status').textContent=(await fetch('/admin/config',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k,value:v})})).status===204?'Configuration enregistrée':'Erreur';loadKeys()}async function deleteKey(){let g=q('guild').value,k=q('key').value;if(!g||!k||!confirm('Supprimer cette clé ?'))return;q('status').textContent=(await fetch('/admin/config/delete',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k})})).status===204?'Configuration supprimée':'Erreur';loadKeys()}async function saveOne(k,v){let g=q('guild').value;if(!g||!v)return false;let r=await fetch('/admin/config',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({guild:g,key:k,value:v})});return r.status===204}async function saveOverlay(){let ok=true;ok=await saveOne('overlay.template',overlayType())&&ok;ok=await saveOne('overlay.title',q('ovTitle').value||'Noliae Live')&&ok;ok=await saveOne('overlay.subtitle',q('ovSubtitle').value||'Communauté Discord')&&ok;ok=await saveOne('overlay.accent',q('ovAccent').value||'#6674ff')&&ok;ok=await saveOne('overlay.accent_secondary',q('ovAccent2').value||'#35d18b')&&ok;ok=await saveOne('overlay.background',q('ovBackground').value||'#0b1020')&&ok;ok=await saveOne('overlay.position',q('ovPosition').value)&&ok;ok=await saveOne('overlay.width',q('ovWidth').value||'420')&&ok;ok=await saveOne('overlay.opacity',q('ovOpacity').value||'0.92')&&ok;q('status').textContent=ok?'Overlay studio enregistré':'Erreur overlay';loadKeys()}function openOverlay(){let g=q('guild').value;if(g)window.open('/overlay?guild='+encodeURIComponent(g)+'&type='+encodeURIComponent(overlayType()),'_blank')}</script></html>"
 }
 
-fn overlay_html(guild: Text) -> Text {
-    let titre = html_escape(unwrap_or(store_lire(guild, "overlay.title"), "Noliae Live"))
-    let sous_titre = html_escape(unwrap_or(store_lire(guild, "overlay.subtitle"), "Communauté Discord"))
-    var accent = unwrap_or(store_lire(guild, "overlay.accent"), "#6674ff")
-    if len(accent) > 32 or contains(accent, ";") or contains(accent, "<") { accent = "#6674ff" }
-    var largeur = unwrap_or(parse_int(unwrap_or(store_lire(guild, "overlay.width"), "420")), 420)
-    if largeur < 260 { largeur = 260 }
-    if largeur > 900 { largeur = 900 }
-    var opacite = unwrap_or(store_lire(guild, "overlay.opacity"), "0.92")
-    if opacite == "" or len(opacite) > 4 or contains(opacite, ";") { opacite = "0.92" }
-    let position = unwrap_or(store_lire(guild, "overlay.position"), "bottom-left")
+fn overlay_valeur(guild: Text, cle: Text, defaut: Text) -> Text {
+    let specifique = store_lire(guild, cle)
+    if has(specifique) { return unwrap_or(specifique, defaut) }
+    return unwrap_or(store_lire(guild, "overlay." + cle), defaut)
+}
+
+fn overlay_css_position(position: Text) -> Text {
     var css_pos = "left:32px;bottom:32px;"
     if position == "bottom-right" { css_pos = "right:32px;bottom:32px;" }
     if position == "top-left" { css_pos = "left:32px;top:32px;" }
     if position == "top-right" { css_pos = "right:32px;top:32px;" }
     if position == "center" { css_pos = "left:50%;top:50%;transform:translate(-50%,-50%);" }
-    return "<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Noliae Overlay</title><style>html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui;color:white}.overlay{position:fixed;" + css_pos + "width:" + text(largeur) + "px;background:rgba(12,18,34," + opacite + ");border:1px solid color-mix(in srgb," + accent + " 55%,white 10%);border-radius:18px;padding:20px 22px;box-shadow:0 22px 80px #0008,0 0 42px color-mix(in srgb," + accent + " 45%,transparent)}.bar{height:4px;width:72px;background:" + accent + ";border-radius:99px;margin-bottom:14px}.title{font-size:32px;font-weight:900;line-height:1.05;text-shadow:0 2px 18px #000}.subtitle{margin-top:9px;color:#d9e1ff;font-size:16px}.pill{display:inline-block;margin-top:16px;padding:7px 10px;background:" + accent + ";border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.02em}</style><body><section class=\"overlay\"><div class=\"bar\"></div><div class=\"title\">" + titre + "</div><div class=\"subtitle\">" + sous_titre + "</div><div class=\"pill\">NOLIAE DISCORD</div></section></body></html>"
+    return css_pos
+}
+
+fn overlay_sanitiser_couleur(valeur: Text, defaut: Text) -> Text {
+    if valeur == "" or len(valeur) > 32 or contains(valeur, ";") or contains(valeur, "<") or contains(valeur, ")") or contains(valeur, "url") { return defaut }
+    return valeur
+}
+
+fn overlay_html(guild: Text, type_overlay: Text) -> Text {
+    let titre = html_escape(unwrap_or(store_lire(guild, "overlay.title"), "Noliae Live"))
+    let sous_titre = html_escape(unwrap_or(store_lire(guild, "overlay.subtitle"), "Communauté Discord"))
+    var accent = overlay_sanitiser_couleur(unwrap_or(store_lire(guild, "overlay.accent"), "#6674ff"), "#6674ff")
+    var accent2 = overlay_sanitiser_couleur(unwrap_or(store_lire(guild, "overlay.accent_secondary"), "#35d18b"), "#35d18b")
+    var fond = overlay_sanitiser_couleur(unwrap_or(store_lire(guild, "overlay.background"), "#0b1020"), "#0b1020")
+    var largeur = unwrap_or(parse_int(unwrap_or(store_lire(guild, "overlay.width"), "420")), 420)
+    if largeur < 260 { largeur = 260 }
+    if largeur > 1100 { largeur = 1100 }
+    var opacite = unwrap_or(store_lire(guild, "overlay.opacity"), "0.92")
+    if opacite == "" or len(opacite) > 4 or contains(opacite, ";") { opacite = "0.92" }
+    let position = unwrap_or(store_lire(guild, "overlay.position"), "bottom-left")
+    let css_pos = overlay_css_position(position)
+    var etiquette = "NOLIAE DISCORD"
+    var icone = "◈"
+    var detail = "Bot en ligne"
+    var metrique1 = "Modules"
+    var valeur1 = "9"
+    var metrique2 = "Config"
+    var valeur2 = "SQLite"
+    var classe_overlay = "stream"
+    if type_overlay == "welcome" {
+        etiquette = "NOUVEAU MEMBRE"
+        icone = "✦"
+        detail = html_escape(overlay_valeur(guild, "welcome_message", "Bienvenue dans la communauté."))
+        metrique1 = "Accueil"
+        valeur1 = "ON"
+        metrique2 = "Auto-role"
+        valeur2 = "READY"
+        classe_overlay = "welcome"
+    }
+    if type_overlay == "stats" {
+        etiquette = "STATISTIQUES LIVE"
+        icone = "▥"
+        detail = "Activité serveur en temps réel"
+        metrique1 = "Cmd/h"
+        valeur1 = text(store_compter_recent_prefixe("_system", "command_global:", 3600))
+        metrique2 = "Guilds"
+        valeur2 = text(dashboard_compter_liste_csv(unwrap_or(store_lister_guildes(), "")))
+        classe_overlay = "stats"
+    }
+    if type_overlay == "tickets" {
+        etiquette = "SUPPORT"
+        icone = "▤"
+        detail = "Tickets, priorités et suivi support"
+        metrique1 = "Tickets"
+        valeur1 = text(store_compter(guild, "ticket_"))
+        metrique2 = "SLA"
+        valeur2 = "ACTIVE"
+        classe_overlay = "tickets"
+    }
+    if type_overlay == "moderation" {
+        etiquette = "MODÉRATION"
+        icone = "🛡"
+        detail = "Alertes, sanctions et sécurité serveur"
+        metrique1 = "Actions"
+        valeur1 = text(store_compter(guild, "sanction_"))
+        metrique2 = "Automod"
+        valeur2 = "ON"
+        classe_overlay = "moderation"
+    }
+    return "<!doctype html><html lang=\"fr\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>NolcBot Overlay</title><style>html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui;color:white}.overlay{position:fixed;" + css_pos + "width:" + text(largeur) + "px;isolation:isolate}.card{position:relative;overflow:hidden;background:linear-gradient(135deg,color-mix(in srgb," + fond + " 88%,black),rgba(12,18,34," + opacite + "));border:1px solid color-mix(in srgb," + accent + " 55%,white 12%);border-radius:26px;padding:22px 24px;box-shadow:0 26px 90px #0009,0 0 70px color-mix(in srgb," + accent + " 38%,transparent);backdrop-filter:blur(18px)}.card:before{content:'';position:absolute;inset:-80px -90px auto auto;width:210px;height:210px;background:radial-gradient(circle," + accent + "99,transparent 68%);filter:blur(4px);z-index:-1}.card:after{content:'';position:absolute;inset:auto auto -95px -80px;width:210px;height:210px;background:radial-gradient(circle," + accent2 + "88,transparent 70%);z-index:-1}.top{display:flex;align-items:center;gap:15px}.logo{width:54px;height:54px;border-radius:18px;display:grid;place-items:center;font-size:28px;font-weight:900;background:linear-gradient(135deg," + accent + "," + accent2 + ");box-shadow:0 12px 36px color-mix(in srgb," + accent + " 45%,transparent)}.kicker{font-size:12px;font-weight:900;letter-spacing:.13em;color:#dfe6ff;text-transform:uppercase}.title{font-size:32px;font-weight:950;line-height:1.02;margin-top:3px;text-shadow:0 3px 24px #000}.subtitle{margin-top:14px;color:#dbe3ff;font-size:16px;line-height:1.35}.miniMetrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}.metric{border:1px solid #ffffff22;border-radius:16px;padding:12px;background:#ffffff10}.metric small{display:block;color:#b9c4e8;font-size:11px;text-transform:uppercase;letter-spacing:.08em}.metric strong{display:block;font-size:22px;margin-top:4px}.shine{height:3px;width:96px;border-radius:999px;background:linear-gradient(90deg," + accent + "," + accent2 + ");margin-top:18px}.welcome .logo{border-radius:50%}.moderation .card{border-color:color-mix(in srgb,#ff607d 55%,white 10%)}.tickets .logo{background:linear-gradient(135deg,#00d4ff," + accent + ")}</style><body><section class=\"overlay " + classe_overlay + "\"><div class=\"card\"><div class=\"top\"><div class=\"logo\">" + icone + "</div><div><div class=\"kicker\">" + etiquette + "</div><div class=\"title\">" + titre + "</div></div></div><div class=\"subtitle\">" + sous_titre + "<br>" + detail + "</div><div class=\"miniMetrics\"><div class=\"metric\"><small>" + metrique1 + "</small><strong>" + valeur1 + "</strong></div><div class=\"metric\"><small>" + metrique2 + "</small><strong>" + valeur2 + "</strong></div></div><div class=\"shine\"></div></div></section></body></html>"
 }
 
 fn servir(fd: Int, pre: List<Fn(Requete) -> Option<Reponse>>) {
@@ -207,7 +272,7 @@ fn servir(fd: Int, pre: List<Fn(Requete) -> Option<Reponse>>) {
         let secret_schema = store_lire("_system", "dashboard.secret")
         let fourni_schema = http_entete(buf, "X-Noliae-Admin")
         if not has(secret_schema) or len(unwrap_or(secret_schema, "")) < 32 or fourni_schema == "" or fourni_schema != unwrap_or(secret_schema, "") { let _forbidden_schema = tcp_write(fd, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
-        let schema = "{\"modules\":[\"security\",\"moderation\",\"community\",\"fun\",\"voice\",\"stats\",\"economy\",\"ai\",\"integrations\"],\"keys\":[\"module.<module>.enabled\",\"welcome_channel\",\"goodbye_channel\",\"auto_role\",\"log.channel\",\"log.moderation_channel\",\"log.security_channel\",\"log.community_channel\",\"prefix\",\"maintenance\",\"ai.enabled\",\"xp.enabled\",\"xp.multiplier\",\"xp.cooldown_seconds\",\"xp.exclude.channel.<channel_id>\",\"xp.exclude.role.<role_id>\",\"community.suggestions_anonymous\",\"ticket.priority.<channel_id>\",\"automod.invites\",\"automod.links\",\"automod.caps\",\"automod.mentions\",\"automod.banned_words\",\"automod.duplicates\",\"antispam.max_messages\",\"raid.join_limit\",\"security.recent_account_seconds\",\"security.recent_account_action\",\"security.nuke_threshold\",\"moderation.warn_threshold\",\"moderation.warn_timeout_seconds\",\"reports.channel\",\"voice.role_seconds\",\"voice.role_id\",\"overlay.title\",\"overlay.subtitle\",\"overlay.accent\",\"overlay.position\",\"overlay.width\",\"overlay.opacity\",\"verification.code\",\"verification.role_id\",\"verification.unverified_role_id\",\"verification.timeout_seconds\",\"verification.timeout_action\",\"music.vote_threshold\"]}"
+        let schema = "{\"modules\":[\"security\",\"moderation\",\"community\",\"fun\",\"voice\",\"stats\",\"economy\",\"ai\",\"integrations\"],\"keys\":[\"module.<module>.enabled\",\"welcome_channel\",\"goodbye_channel\",\"auto_role\",\"log.channel\",\"log.moderation_channel\",\"log.security_channel\",\"log.community_channel\",\"prefix\",\"maintenance\",\"ai.enabled\",\"xp.enabled\",\"xp.multiplier\",\"xp.cooldown_seconds\",\"xp.exclude.channel.<channel_id>\",\"xp.exclude.role.<role_id>\",\"community.suggestions_anonymous\",\"ticket.priority.<channel_id>\",\"automod.invites\",\"automod.links\",\"automod.caps\",\"automod.mentions\",\"automod.banned_words\",\"automod.duplicates\",\"antispam.max_messages\",\"raid.join_limit\",\"security.recent_account_seconds\",\"security.recent_account_action\",\"security.nuke_threshold\",\"moderation.warn_threshold\",\"moderation.warn_timeout_seconds\",\"reports.channel\",\"voice.role_seconds\",\"voice.role_id\",\"overlay.template\",\"overlay.title\",\"overlay.subtitle\",\"overlay.accent\",\"overlay.accent_secondary\",\"overlay.background\",\"overlay.position\",\"overlay.width\",\"overlay.opacity\",\"welcome_message\",\"verification.code\",\"verification.role_id\",\"verification.unverified_role_id\",\"verification.timeout_seconds\",\"verification.timeout_action\",\"music.vote_threshold\"]}"
         let reponse_schema = "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + text(len(schema)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + schema
         let _schema = tcp_write(fd, reponse_schema)
         return
@@ -270,7 +335,10 @@ fn servir(fd: Int, pre: List<Fn(Requete) -> Option<Reponse>>) {
     if starts_with(buf, "GET /overlay ") or starts_with(buf, "GET /overlay?") {
         let guild_overlay = http_query_param(buf, "guild")
         if guild_overlay == "" { let _bad_overlay = tcp_write(fd, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
-        let html_overlay = overlay_html(guild_overlay)
+        var type_overlay = http_query_param(buf, "type")
+        if type_overlay == "" { type_overlay = unwrap_or(store_lire(guild_overlay, "overlay.template"), "stream") }
+        if type_overlay != "stream" and type_overlay != "welcome" and type_overlay != "stats" and type_overlay != "tickets" and type_overlay != "moderation" { type_overlay = "stream" }
+        let html_overlay = overlay_html(guild_overlay, type_overlay)
         let reponse_overlay = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: " + text(len(html_overlay)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + html_overlay
         let _overlay = tcp_write(fd, reponse_overlay)
         return
