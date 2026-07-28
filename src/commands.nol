@@ -36,6 +36,16 @@ fn hash_texte(texte: Text) -> Text {
     return text(len(texte)) + "." + extrait
 }
 
+fn carte_nolcbot(icone: Text, titre: Text, corps: Text) -> Text {
+    return "╭─ " + icone + " **" + titre + "**\n"
+        + corps
+        + "\n╰─ ✨ `NolcBot`"
+}
+
+fn ligne_carte(label: Text, valeur: Text) -> Text {
+    return "│ **" + label + "** `" + valeur + "`\n"
+}
+
 fn aide_design() -> Text {
     return "## 📚 NolcBot — 152 commandes\n"
         + "**Core** /help /ping /health /version /privacy /about /hello /echo\n"
@@ -528,7 +538,15 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let spam = store_lire(guild, "antispam.max_messages")
         var spam_texte = "désactivé"
         if has(spam) { spam_texte = unwrap_or(spam, "") + " messages/fenêtre" }
-        return discord_reponse_ephemere("📊 Statistiques\nCommandes : " + text(commandes) + "\nMessages : " + text(messages) + "\nArrivées : " + text(arrives) + "\nDéparts : " + text(departs) + "\nVocal : " + text(voix_entrees) + " entrées / " + text(voix_sorties) + " sorties / " + text(voix_secondes) + " secondes\nTickets : " + text(tickets) + "\nActions de modération : " + text(sanctions) + "\nAnti-raid : " + raid_texte + "\nAnti-spam : " + spam_texte)
+        return discord_reponse_ephemere(carte_nolcbot("📊", "Statistiques serveur",
+            ligne_carte("Commandes", text(commandes))
+            + ligne_carte("Messages", text(messages))
+            + ligne_carte("Arrivées / départs", text(arrives) + " / " + text(departs))
+            + ligne_carte("Vocal", text(voix_entrees) + " entrées · " + text(voix_sorties) + " sorties · " + text(voix_secondes) + "s")
+            + ligne_carte("Tickets", text(tickets))
+            + ligne_carte("Modération", text(sanctions))
+            + ligne_carte("Anti-raid", raid_texte)
+            + ligne_carte("Anti-spam", spam_texte)))
     }
     if nom == "stats_csv" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -549,7 +567,12 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let joins_report = store_compter_recent(guild_report, "member_join", secondes_report)
         let departs_report = store_compter_recent(guild_report, "member_leave", secondes_report)
         let moderation_report = store_compter_recent(guild_report, "ban", secondes_report) + store_compter_recent(guild_report, "kick", secondes_report) + store_compter_recent(guild_report, "warn", secondes_report) + store_compter_recent(guild_report, "mute", secondes_report)
-        return discord_reponse_ephemere("📈 Rapport " + periode_report + "\nMessages : " + text(messages_report) + "\nCommandes : " + text(commandes_report) + "\nArrivées : " + text(joins_report) + "\nDéparts : " + text(departs_report) + "\nModération : " + text(moderation_report))
+        return discord_reponse_ephemere(carte_nolcbot("📈", "Rapport " + periode_report,
+            ligne_carte("Messages", text(messages_report))
+            + ligne_carte("Commandes", text(commandes_report))
+            + ligne_carte("Arrivées", text(joins_report))
+            + ligne_carte("Départs", text(departs_report))
+            + ligne_carte("Modération", text(moderation_report))))
     }
     if nom == "logs_csv" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
@@ -569,7 +592,11 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         var badge_affiche = badge
         if points >= 100 { badge_affiche = "Actif" }
         if points >= 1000 { badge_affiche = "Vétéran" }
-        return discord_reponse_ephemere("🏆 Profil de <@" + user + ">\nXP : " + text(points) + "\nNiveau : " + text(niveau) + "\nBadge : " + badge_affiche)
+        return discord_reponse_ephemere(carte_nolcbot("🏆", "Profil membre",
+            "│ **Membre** <@" + user + ">\n"
+            + ligne_carte("XP", text(points))
+            + ligne_carte("Niveau", text(niveau))
+            + ligne_carte("Badge", badge_affiche)))
     }
     if nom == "achievements" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -579,7 +606,9 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         if points >= 100 { badges = badges + "\n⭐ Actif" }
         if points >= 1000 { badges = badges + "\n🏅 Vétéran" }
         if points >= 5000 { badges = badges + "\n💎 Légende" }
-        return discord_reponse_ephemere("🏆 Succès de <@" + user + ">\n" + badges)
+        return discord_reponse_ephemere(carte_nolcbot("🏅", "Succès membre",
+            "│ **Membre** <@" + user + ">\n"
+            + "│ " + badges))
     }
     if nom == "xp_leaderboard" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -632,14 +661,28 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         let commandes_heure = store_compter_recent_prefixe("_system", "command_global:", 3600)
         var etat = "✅ Bot opérationnel"
         if not db_ok { etat = "⚠️ Bot dégradé" }
-        if has(schema) { return discord_reponse_ephemere(etat + "\nSQLite : " + text(db_ok) + "\nSchéma SQLite : " + unwrap_or(schema, "") + "\nDernier tick Gateway : " + age_tick + "\nCommandes dernière heure : " + text(commandes_heure) + "\nServeur : " + guild) }
-        return discord_reponse_ephemere("⚠️ Base SQLite indisponible ou non initialisée.")
+        if has(schema) { return discord_reponse_ephemere(carte_nolcbot("🩺", "État du bot",
+            "│ **Statut** " + etat + "\n"
+            + ligne_carte("SQLite", text(db_ok))
+            + ligne_carte("Schéma", unwrap_or(schema, ""))
+            + ligne_carte("Dernier tick Gateway", age_tick)
+            + ligne_carte("Commandes / heure", text(commandes_heure))
+            + ligne_carte("Serveur", guild))) }
+        return discord_reponse_ephemere(carte_nolcbot("⚠️", "Base indisponible", "│ SQLite n’est pas initialisée."))
     }
     if nom == "version" {
-        return discord_reponse_ephemere("🤖 Noliae Discord Bot\nVersion : 0.2.0\nRuntime : Nolc natif")
+        return discord_reponse_ephemere(carte_nolcbot("🤖", "Version",
+            ligne_carte("Nom", "NolcBot")
+            + ligne_carte("Version", "0.2.0")
+            + ligne_carte("Runtime", "Nolc natif")
+            + ligne_carte("Build", "Linux CI")))
     }
     if nom == "privacy" {
-        return discord_reponse_ephemere("🔒 Données conservées : identifiants Discord nécessaires, configuration serveur, actions de modération et statistiques activées. Les secrets restent dans l’environnement. /ai, /translate, /weather et /qr peuvent transmettre leur contenu à un fournisseur externe configuré ou utilisé. Consulte PRIVACY.md pour les détails.")
+        return discord_reponse_ephemere(carte_nolcbot("🔒", "Confidentialité",
+            "│ Identifiants Discord nécessaires, configuration serveur,\n"
+            + "│ audit de modération et statistiques activées.\n"
+            + "│ Les secrets restent dans l’environnement.\n"
+            + "│ IA/traduction/météo/QR peuvent utiliser un fournisseur externe."))
     }
     if nom == "data_delete" {
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
@@ -1340,38 +1383,62 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         }
         return discord_reponse_ephemere("⏳ Usage : `/mute membre secondes`.")
     }
-    if nom == "ping" { return discord_reponse_message("🏓 Pong ! Bot Nolc en ligne.") }
+    if nom == "ping" {
+        return discord_reponse_message(carte_nolcbot("🏓", "Pong",
+            ligne_carte("Statut", "en ligne")
+            + ligne_carte("Runtime", "Nolc natif")
+            + ligne_carte("SQLite", text(store_integrite_ok()))))
+    }
     if nom == "userinfo" or nom == "user" {
         let cible = json_chemin_texte(req.corps, "data.options.0.value")
         var nom_utilisateur = unwrap_or(json_chemin_texte(req.corps, "member.user.global_name"), unwrap_or(json_chemin_texte(req.corps, "member.user.username"), "inconnu"))
         var identifiant = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "inconnu")
         if has(cible) { identifiant = unwrap_or(cible, identifiant); nom_utilisateur = "Membre ciblé" }
-        return discord_reponse_ephemere("👤 Utilisateur : " + nom_utilisateur + "\nID : " + identifiant)
+        return discord_reponse_ephemere(carte_nolcbot("👤", "Utilisateur",
+            "│ **Nom** " + nom_utilisateur + "\n"
+            + ligne_carte("ID", identifiant)))
     }
     if nom == "serverinfo" {
         let serveur = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "inconnu")
         let nom_serveur = unwrap_or(json_chemin_texte(req.corps, "guild.name"), "Serveur Discord")
         let membre = unwrap_or(json_chemin_texte(req.corps, "member.user.id"), "inconnu")
         let compteur = unwrap_or(json_chemin_texte(req.corps, "guild.member_count"), "inconnu")
-        return discord_reponse_ephemere("🏠 " + nom_serveur + "\nID : " + serveur + "\nMembres : " + compteur + "\nRequêteur : <@" + membre + ">")
+        return discord_reponse_ephemere(carte_nolcbot("🏠", "Serveur Discord",
+            "│ **Nom** " + nom_serveur + "\n"
+            + ligne_carte("ID", serveur)
+            + ligne_carte("Membres", compteur)
+            + "│ **Requêteur** <@" + membre + ">\n"))
     }
     if nom == "roleinfo" {
         let role = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         if role == "" { return discord_reponse_ephemere("Usage : `/roleinfo rôle`.") }
         let nom_role = unwrap_or(json_chemin_texte(req.corps, "resolved.roles." + role + ".name"), "Rôle Discord")
         let couleur = unwrap_or(json_chemin_texte(req.corps, "resolved.roles." + role + ".color"), "0")
-        return discord_reponse_ephemere("🎭 " + nom_role + "\nID : " + role + "\nCouleur : " + couleur)
+        return discord_reponse_ephemere(carte_nolcbot("🎭", "Rôle Discord",
+            "│ **Nom** " + nom_role + "\n"
+            + ligne_carte("ID", role)
+            + ligne_carte("Couleur", couleur)))
     }
     if nom == "channelinfo" {
         let salon = unwrap_or(json_chemin_texte(req.corps, "channel_id"), "")
         let nom_salon = unwrap_or(json_chemin_texte(req.corps, "channel.name"), "Salon courant")
         let type_salon = unwrap_or(json_chemin_texte(req.corps, "channel.type"), "inconnu")
-        return discord_reponse_ephemere("📺 " + nom_salon + "\nID : " + salon + "\nType Discord : " + type_salon)
+        return discord_reponse_ephemere(carte_nolcbot("📺", "Salon Discord",
+            "│ **Nom** " + nom_salon + "\n"
+            + ligne_carte("ID", salon)
+            + ligne_carte("Type Discord", type_salon)))
     }
     if nom == "about" {
-        return discord_reponse_message("🤖 Bot Noliae écrit entièrement en Nolc, compilé en binaire natif.")
+        return discord_reponse_message(carte_nolcbot("🤖", "À propos",
+            "│ Bot Discord modulaire écrit en **Nolc**.\n"
+            + "│ Core léger, SQLite, dashboard, IA, intégrations et overlays.\n"
+            + ligne_carte("Mode", "OSS self-host")))
     }
-    if nom == "hello" { return discord_reponse_message("👋 Salut " + appelant(req.corps) + " !") }
+    if nom == "hello" {
+        return discord_reponse_message(carte_nolcbot("👋", "Bienvenue",
+            "│ Salut **" + appelant(req.corps) + "** !\n"
+            + "│ Tape `/help` pour ouvrir le centre de commandes."))
+    }
     if nom == "echo" {
         let msg = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
         if msg == "" { return discord_reponse_ephemere("Rien à répéter.") }
