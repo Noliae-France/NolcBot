@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Noliae-France/NolcBot/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/Noliae-France/NolcBot/actions/workflows/discord-integration.yml"><img alt="Discord integration" src="https://img.shields.io/badge/Discord%20integration-manual%20tested-5865f2"></a>
-  <a href="https://github.com/Noliae-France/NolcBot/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/Noliae-France/NolcBot?include_prereleases&label=release"></a>
+  <a href="https://github.com/Noliae-France/NolcBot/releases/tag/v0.1.0"><img alt="GitHub Release" src="https://img.shields.io/badge/release-v0.1.0-2ea44f"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Platform" src="https://img.shields.io/badge/platform-linux-2ea44f"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Language" src="https://img.shields.io/badge/language-Nolc-5865f2"></a>
   <a href="https://github.com/Noliae-France/NolcBot"><img alt="Security" src="https://img.shields.io/badge/secrets-scanned-success"></a>
