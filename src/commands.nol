@@ -69,20 +69,57 @@ fn version_nolcbot() -> Text {
 }
 
 fn aide_design() -> Text {
-    return "## 📚 NolcBot — 154 commandes\n"
-        + "**Core** /help /ping /health /version /update_check /update_plan /privacy /about /hello /echo\n"
-        + "**Admin** /config /config_get /config_list /config_delete /modules /groupe /permission /aclrole /ai_config\n"
-        + "**Discord** /userinfo /user /serverinfo /roleinfo /channelinfo /avatar /banner /nickname /timestamp /timezone /calc /convert /choose\n"
-        + "**Modo** /ban /ban_temp /kick /unban /mute /unmute /clear /slowmode /lock /unlock /warn /warnings /sanctions /sanction_revoke /sanction_appeal /note /report\n"
-        + "**Rôles** /role /roleconfig /role_temp /channel_edit /channel_sync_config /verify\n"
-        + "**Tickets** /ticket /ticket_close /ticket_add /ticket_remove /ticket_claim /ticket_unclaim /ticket_transcript /ticket_priority\n"
-        + "**Commu** /faq /faq_ai /announce /announce_schedule /poll /poll_vote /poll_close /suggest /suggest_status /partnership /invites /invite_stats /profile /achievements /xp_leaderboard /xp_reset\n"
-        + "**IA** /ai /summarize /rewrite /ideas /translate /ai_admin_plan /ai_admin_confirm /ai_mod_alert /ai_mod_incident /ai_mod_confirm /community_event_ideas /community_rules /community_onboarding /community_announce_ai /community_faq_ai_add /community_confirm\n"
-        + "**Intégr.** /rss /rss_subscribe /rss_unsubscribe /youtube_subscribe /youtube_list /github_subscribe /reddit_subscribe /twitch_status /twitch_subscribe /twitch_unsubscribe /twitch_list /site_status /calendar /calendar_subscribe /calendar_unsubscribe /webhook_test /weather /define /qr /password\n"
-        + "**Éco** /balance /leaderboard /daily /weekly /work /shop /buy /inventory /transactions /pay\n"
-        + "**Fun** /roll /coin /8ball /pfc /joke /meme /meme_add /meme_remove /meme_list /quote /riddle /quiz /challenge /morpion /compatibility\n"
-        + "**Stats+** /stats /stats_csv /stats_report /logs_csv /data_export /data_delete /reminders /remind /remind_repeat /remind_cancel /voice /music /form_create /form_open\n"
-        + "💡 Tape `/` pour les options. Admin: `/config_list`, `/modules`."
+    return carte_nolcbot("📚", "Centre d’aide",
+        "│ **154 commandes** rangées par modules.\n"
+        + "│ Tape `/` pour la recherche Discord native.\n"
+        + "│\n"
+        + "├ 🛡️ **Modération** `/ban` `/kick` `/mute` `/warn` `/clear`\n"
+        + "├ 🎫 **Tickets** `/ticket` `/ticket_claim` `/ticket_transcript`\n"
+        + "├ 🤖 **IA** `/ai` `/ai_admin_plan` `/ai_mod_alert`\n"
+        + "├ ⚙️ **Admin** `/config` `/modules` `/groupe` `/permission`\n"
+        + "├ 👥 **Communauté** `/announce` `/poll` `/faq` `/suggest`\n"
+        + "├ 🔌 **Intégrations** `/youtube_subscribe` `/twitch_subscribe` `/rss`\n"
+        + "├ 💰 **Économie** `/daily` `/balance` `/shop` `/pay`\n"
+        + "├ 🎮 **Fun** `/quiz` `/morpion` `/8ball` `/meme`\n"
+        + "├ 📊 **Stats** `/stats` `/stats_report` `/logs_csv`\n"
+        + "└ 🧰 **Utils** `/userinfo` `/serverinfo` `/weather` `/remind`\n"
+        + "│\n"
+        + "│ **Détail** `/help module:modération|tickets|ia|admin|communauté|intégrations|économie|fun|stats|utils`")
+}
+
+fn aide_module(module: Text) -> Text {
+    let m = lower(module)
+    if m == "moderation" or m == "modération" or m == "modo" {
+        return carte_nolcbot("🛡️", "Aide — Modération", "│ `/ban` `/ban_temp` `/kick` `/unban`\n│ `/mute` `/unmute` `/clear` `/slowmode`\n│ `/lock` `/unlock` `/warn` `/warnings`\n│ `/sanctions` `/sanction_revoke` `/sanction_appeal`\n│ `/note` `/report`")
+    }
+    if m == "tickets" or m == "ticket" {
+        return carte_nolcbot("🎫", "Aide — Tickets", "│ `/ticket` `/ticket_close`\n│ `/ticket_add` `/ticket_remove`\n│ `/ticket_claim` `/ticket_unclaim`\n│ `/ticket_transcript` `/ticket_priority`")
+    }
+    if m == "ia" or m == "ai" {
+        return carte_nolcbot("🤖", "Aide — IA", "│ `/ai` `/summarize` `/rewrite` `/ideas` `/translate`\n│ `/ai_config` `/ai_admin_plan` `/ai_admin_confirm`\n│ `/ai_mod_alert` `/ai_mod_incident` `/ai_mod_confirm`\n│ `/community_event_ideas` `/community_rules`\n│ `/community_onboarding` `/community_announce_ai`")
+    }
+    if m == "admin" or m == "configuration" or m == "config" {
+        return carte_nolcbot("⚙️", "Aide — Administration", "│ `/config` `/config_get` `/config_list` `/config_delete`\n│ `/modules` `/groupe` `/permission` `/aclrole`\n│ `/roleconfig` `/role_temp` `/channel_edit`\n│ `/channel_sync_config` `/verify`\n│ `/update_check` `/update_plan`")
+    }
+    if m == "communauté" or m == "communaute" or m == "community" {
+        return carte_nolcbot("👥", "Aide — Communauté", "│ `/faq` `/faq_ai` `/announce` `/announce_schedule`\n│ `/poll` `/poll_vote` `/poll_close`\n│ `/suggest` `/suggest_status` `/partnership`\n│ `/invites` `/invite_stats`\n│ `/profile` `/achievements` `/xp_leaderboard` `/xp_reset`")
+    }
+    if m == "integrations" or m == "intégrations" or m == "integration" {
+        return carte_nolcbot("🔌", "Aide — Intégrations", "│ `/rss` `/rss_subscribe` `/rss_unsubscribe`\n│ `/youtube_subscribe` `/youtube_list`\n│ `/github_subscribe` `/reddit_subscribe`\n│ `/twitch_status` `/twitch_subscribe` `/twitch_unsubscribe`\n│ `/twitch_list` `/site_status` `/calendar`\n│ `/calendar_subscribe` `/calendar_unsubscribe` `/webhook_test`")
+    }
+    if m == "économie" or m == "economie" or m == "economy" or m == "eco" {
+        return carte_nolcbot("💰", "Aide — Économie", "│ `/balance` `/leaderboard`\n│ `/daily` `/weekly` `/work`\n│ `/shop` `/buy` `/inventory`\n│ `/transactions` `/pay`")
+    }
+    if m == "fun" or m == "jeux" or m == "games" {
+        return carte_nolcbot("🎮", "Aide — Fun", "│ `/roll` `/coin` `/8ball` `/pfc`\n│ `/joke` `/meme` `/meme_add` `/meme_remove` `/meme_list`\n│ `/quote` `/riddle` `/quiz` `/challenge`\n│ `/morpion` `/compatibility` `/choose`")
+    }
+    if m == "stats" or m == "statistiques" {
+        return carte_nolcbot("📊", "Aide — Statistiques", "│ `/stats` `/stats_csv` `/stats_report`\n│ `/logs_csv` `/data_export` `/data_delete`\n│ `/health` `/version` `/privacy`")
+    }
+    if m == "utils" or m == "utilitaires" or m == "utility" {
+        return carte_nolcbot("🧰", "Aide — Utilitaires", "│ `/userinfo` `/user` `/serverinfo`\n│ `/roleinfo` `/channelinfo` `/avatar` `/banner`\n│ `/nickname` `/timestamp` `/timezone`\n│ `/calc` `/convert` `/weather` `/define`\n│ `/qr` `/password` `/remind` `/remind_repeat` `/reminders`")
+    }
+    return carte_info("📚", "Module inconnu", "Modules disponibles : `modération`, `tickets`, `ia`, `admin`, `communauté`, `intégrations`, `économie`, `fun`, `stats`, `utils`.")
 }
 
 fn appelant(corps: Text) -> Text {
@@ -1344,7 +1381,9 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         return discord_reponse_ephemere(carte_erreur("Impossible de supprimer le réglage."))
     }
     if nom == "help" {
-        return discord_reponse_message(aide_design())
+        let module_aide = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
+        if module_aide != "" { return discord_reponse_ephemere(aide_module(module_aide)) }
+        return discord_reponse_ephemere(aide_design())
     }
     if nom == "nickname" {
         if not acl_autorise(req.corps, "nickname") { return acl_refus("nickname") }
@@ -1575,7 +1614,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
 
 fn commandes_json() -> Text {
     return "["
-        + "{\"name\":\"help\",\"description\":\"Affiche l’aide du bot\",\"type\":1},"
+        + "{\"name\":\"help\",\"description\":\"Affiche l’aide du bot\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"module\",\"description\":\"modération, tickets, ia, admin, communauté, intégrations, économie, fun, stats ou utils\",\"required\":false}]},"
         + "{\"name\":\"ai_config\",\"description\":\"Configure le fournisseur IA du serveur\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"fournisseur\",\"description\":\"openai, gemini ou mistral\",\"required\":true},{\"type\":3,\"name\":\"api_key\",\"description\":\"Clé API du fournisseur\",\"required\":true},{\"type\":3,\"name\":\"modele\",\"description\":\"Modèle à utiliser\",\"required\":true}]},"
         + "{\"name\":\"ai_admin_plan\",\"description\":\"Demande un plan de serveur à l’IA\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"demande\",\"description\":\"Structure souhaitée\",\"required\":true}]},"
         + "{\"name\":\"ai_admin_confirm\",\"description\":\"Exécute le plan IA en attente\",\"type\":1},"

@@ -4,5 +4,5 @@ version = 1
 [[paquet]]
 nom = "nolc-discord"
 source = "git+https://github.com/Noliae-France/nolc-discord.git"
-revision = "d2668f68d21e4867afa29bc2dd20aa3e8cd57429"
+revision = "dc6fa0167df613acf38fca12d1ef803560126b08"
 checksum = "sha256:1bfec0c075107d9223ba9c6c9d6690e229d4c347911a5842bbdbbb8e84bab419"
