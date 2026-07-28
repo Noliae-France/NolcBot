@@ -36,6 +36,30 @@ fn hash_texte(texte: Text) -> Text {
     return text(len(texte)) + "." + extrait
 }
 
+fn aide_design() -> Text {
+    return "## 🤖 NolcBot — centre de commandes\n"
+        + "> Bot Discord modulaire, léger et configurable depuis Discord + SQLite.\n\n"
+        + "### ⚡ Essentiel\n"
+        + "`/ping` · `/help` · `/health` · `/version` · `/privacy` · `/config` · `/modules`\n\n"
+        + "### 🛡️ Administration & modération\n"
+        + "`/ban` · `/kick` · `/mute` · `/clear` · `/slowmode` · `/lock` · `/sanctions` · `/warnings`\n"
+        + "`/role` · `/roleconfig` · `/aclrole` · `/groupe` · `/permission`\n\n"
+        + "### 🎫 Communauté & tickets\n"
+        + "`/ticket` · `/ticket_add` · `/ticket_remove` · `/ticket_claim` · `/ticket_transcript`\n"
+        + "`/announce` · `/announce_schedule` · `/poll` · `/verify` · `/faq` · `/profile`\n\n"
+        + "### 🤖 IA & assistants\n"
+        + "`/ai` · `/faq_ai` · `/summarize` · `/rewrite` · `/ideas` · `/translate`\n"
+        + "`/ai_admin_plan` · `/ai_admin_confirm` · `/ai_mod_alert` · `/ai_mod_confirm`\n\n"
+        + "### 🔌 Intégrations & utilitaires\n"
+        + "`/rss` · `/calendar` · `/youtube_subscribe` · `/github_subscribe` · `/reddit_subscribe` · `/twitch_subscribe`\n"
+        + "`/weather` · `/define` · `/qr` · `/password` · `/timezone` · `/remind`\n\n"
+        + "### 🎮 Fun, économie & stats\n"
+        + "`/quiz` · `/challenge` · `/morpion` · `/choose` · `/meme` · `/daily` · `/balance` · `/shop`\n"
+        + "`/stats` · `/stats_report` · `/stats_csv` · `/logs_csv` · `/data_export` · `/data_delete`\n\n"
+        + "💡 **Astuce :** tape `/` puis le nom d’un module pour voir les options slash détaillées.\n"
+        + "🧩 **Admin :** `/modules` affiche l’état des modules, `/config_list` liste les clés SQLite configurables."
+}
+
 fn appelant(corps: Text) -> Text {
     let a = json_chemin_texte(corps, "member.user.global_name")
     if has(a) { return unwrap_or(a, "toi") }
@@ -1206,7 +1230,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         return discord_reponse_ephemere("❌ Impossible de supprimer le réglage.")
     }
     if nom == "help" {
-        return discord_reponse_message("📚 Commandes : /ping, /userinfo, /serverinfo, /roleinfo, /stats, /stats_report, /stats_csv, /logs_csv, /health, /version, /privacy, /verify, /profile, /achievements, /quiz, /challenge, /morpion, /choose, /meme, /faq, /faq_ai, /voice, /music, /rss, /calendar, /calendar_subscribe, /calendar_unsubscribe, /youtube_subscribe, /github_subscribe, /reddit_subscribe, /twitch_status, /twitch_subscribe, /site_status, /weather, /define, /ai, /summarize, /rewrite, /ideas, /translate, /qr, /password, /timezone, /remind, /remind_repeat, /reminders, /announce, /announce_schedule, /nickname, /ticket, /ticket_add, /ticket_remove, /ticket_claim, /ticket_unclaim, /ticket_transcript, /poll, /invites, /invite_stats, /partnership, /modules, /daily, /weekly, /balance, /work, /shop, /buy, /inventory, /give, /transactions, /sanctions, /warnings, /sanction_revoke, /role_temp, /sanction_appeal, /data_export, /data_delete, /ban, /kick, /mute, /clear, /slowmode, /lock, /role, /roleconfig, /aclrole, /config, /config_get, /config_list, /config_delete, /groupe et /permission. Utilise les descriptions slash pour les options.")
+        return discord_reponse_message(aide_design())
     }
     if nom == "nickname" {
         if not acl_autorise(req.corps, "nickname") { return acl_refus("nickname") }
