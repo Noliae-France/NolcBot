@@ -205,23 +205,14 @@ section "Enregistrement des commandes slash"
 
 section "Enregistrement immédiat des commandes sur le serveur de test"
 ./bot commands-json >"$work_dir/commands_payload.json"
-jq '[.[] | select(.name as $n | [
-  "ping","help","health","version","update_check","update_plan","privacy",
-  "ban","kick","mute","warn","sanctions","clear","slowmode",
-  "ticket","ticket_add","ticket_remove","ticket_close",
-  "faq","faq_ai","community_event_ideas","community_announce_ai",
-  "balance","daily","weekly","work","shop","buy","inventory",
-  "roll","coin","8ball","pfc","quiz","riddle","meme","morpion",
-  "stats","stats_report","logs_csv",
-  "ai","ai_config","summarize","rewrite","ideas",
-  "rss","rss_subscribe","youtube_subscribe","twitch_subscribe","github_subscribe","reddit_subscribe",
-  "form_create","form_open","channel_edit","channel_sync_config"
-] | index($n))]' "$work_dir/commands_payload.json" >"$work_dir/commands_payload_ci.json"
-ci_command_count="$(jq 'length' "$work_dir/commands_payload_ci.json")"
-if [ "$ci_command_count" -lt 40 ] || [ "$ci_command_count" -gt 100 ]; then
-  echo "::error::Sous-ensemble de commandes CI invalide: $ci_command_count"
+cp "$work_dir/commands_payload.json" "$work_dir/commands_payload_ci.json"
+jq -r '.[].name' "$work_dir/commands_payload_ci.json" >"$work_dir/commands_expected.txt"
+ci_command_count="$(wc -l < "$work_dir/commands_expected.txt" | tr -d ' ')"
+if [ "$ci_command_count" -lt 100 ]; then
+  echo "::error::Liste complète de commandes CI invalide: $ci_command_count"
   exit 1
 fi
+echo "Commandes slash à enregistrer sur le serveur de test: $ci_command_count"
 guild_command_status="$(curl -sS -o "$work_dir/guild_commands_put.json" -w '%{http_code}' -X PUT -H "$auth_header" -H "Content-Type: application/json" --data-binary "@$work_dir/commands_payload_ci.json" "$discord_api/applications/$DISCORD_APP_ID/guilds/$DISCORD_TEST_GUILD_ID/commands")"
 if [ "$guild_command_status" != "200" ] && [ "$guild_command_status" != "201" ]; then
   echo "::error::Enregistrement guild-scoped des commandes échoué (HTTP $guild_command_status)"
@@ -242,20 +233,13 @@ if [ "$command_count" -lt 10 ]; then
 fi
 echo "Commandes globales visibles: $command_count"
 
-section "Vérification commandes slash par domaine"
-for command in \
-  ping help health version update_check update_plan privacy \
-  ban kick mute warn sanctions clear slowmode \
-  ticket ticket_add ticket_remove ticket_close \
-  faq faq_ai community_event_ideas community_announce_ai \
-  balance daily weekly work shop buy inventory \
-  roll coin 8ball pfc quiz riddle meme morpion \
-  stats stats_report logs_csv \
-  ai ai_config summarize rewrite ideas \
-  rss rss_subscribe youtube_subscribe twitch_subscribe github_subscribe reddit_subscribe \
-  form_create form_open channel_edit channel_sync_config; do
+section "Vérification de toutes les commandes slash"
+while IFS= read -r command; do
+  if [ -z "$command" ]; then
+    continue
+  fi
   assert_command "$command"
-done
+done < "$work_dir/commands_expected.txt"
 
 section "Démarrage HTTP court du bot"
 set +e
