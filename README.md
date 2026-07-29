@@ -273,21 +273,31 @@ Les sanctions progressives s’activent avec `/config moderation.warn_threshold 
 
 Pour les rôles auto-attribuables, l’administrateur utilise `/roleconfig rôle actif:true`, puis les membres disposent de `/role ajouter rôle` et `/role retirer rôle`. La configuration est propre à chaque serveur et toutes ces opérations sont inscrites dans l’audit SQLite.
 
-Enregistrer les commandes :
+Synchronisation automatique des commandes :
 
 ```sh
-DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... ./bot register
+DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... ./bot gateway
 ```
 
-Discord limite les commandes slash d’une application à **100 commandes par scope**. NolcBot garde un catalogue interne plus large, mais `./bot register` publie un lot Discord compatible via `./bot commands-json-discord`; les commandes d’administration critiques, dont `/update_check` et `/update_plan`, sont incluses dans ce lot.
+Au démarrage Gateway, NolcBot reçoit la liste des serveurs Discord via `READY`, mémorise chaque `guild_id` dans SQLite puis publie automatiquement les commandes slash sur chaque serveur. Quand le bot rejoint un nouveau serveur, l’événement `GUILD_CREATE` déclenche aussi la synchronisation automatiquement.
 
-Si d’anciennes commandes slash restent visibles sur un serveur de test, synchroniser le scope serveur :
+Discord limite les commandes slash d’une application à **100 commandes par scope**. NolcBot garde un catalogue interne plus large, mais l’auto-sync publie le lot compatible Discord via `./bot commands-json-discord`; les commandes critiques comme `/setup`, `/modules`, `/permission`, `/update_check` et `/update_plan` sont incluses dans ce lot.
+
+Pour éviter les vieilles commandes globales qui traînent, NolcBot purge automatiquement les commandes globales au premier démarrage après un changement de catalogue, puis utilise les commandes serveur, beaucoup plus rapides à propager.
+
+Réglages avancés :
 
 ```sh
-DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... ./bot sync-guild ID_SERVEUR
+NOLIAE_AUTO_SYNC_COMMANDS=false ./bot gateway
+NOLIAE_AUTO_CLEAR_GLOBAL_COMMANDS=false ./bot gateway
 ```
 
-Commandes utiles :
+Les mêmes options peuvent être pilotées via SQLite :
+
+- `discord.auto_sync_commands=false`
+- `discord.auto_clear_global_commands=false`
+
+Commandes de secours pour debug/CI :
 
 - `./bot register` : remplace les commandes globales compatibles Discord ;
 - `./bot register-guild ID_SERVEUR` : remplace les commandes d’un serveur ;
@@ -295,7 +305,7 @@ Commandes utiles :
 - `./bot clear-global-commands` : supprime les commandes globales, propagation Discord plus lente ;
 - `./bot sync-guild ID_SERVEUR` : purge puis ré-enregistre immédiatement le serveur.
 
-Après synchronisation, `/setup` ouvre le guide de configuration rapide directement dans Discord.
+Après l’auto-sync, `/setup` ouvre le guide de configuration rapide directement dans Discord sans action manuelle.
 
 Démarrer l’endpoint d’interactions :
 

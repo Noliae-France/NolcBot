@@ -41,6 +41,97 @@ fn vider_commandes_guilde(app_id: Text, token: Text, guild: Text) -> Bool {
     return code == 200 or code == 201
 }
 
+fn sync_auto_actif() -> Bool {
+    let env_auto = env("NOLIAE_AUTO_SYNC_COMMANDS")
+    if has(env_auto) {
+        let v = lower(unwrap_or(env_auto, ""))
+        if v == "0" or v == "false" or v == "off" or v == "no" { return false }
+    }
+    let sqlite_auto = store_lire("_system", "discord.auto_sync_commands")
+    if has(sqlite_auto) {
+        let v_sqlite = lower(unwrap_or(sqlite_auto, ""))
+        if v_sqlite == "0" or v_sqlite == "false" or v_sqlite == "off" or v_sqlite == "no" { return false }
+    }
+    return true
+}
+
+fn sync_global_auto_actif() -> Bool {
+    let env_clear = env("NOLIAE_AUTO_CLEAR_GLOBAL_COMMANDS")
+    if has(env_clear) {
+        let v = lower(unwrap_or(env_clear, ""))
+        if v == "0" or v == "false" or v == "off" or v == "no" { return false }
+    }
+    let sqlite_clear = store_lire("_system", "discord.auto_clear_global_commands")
+    if has(sqlite_clear) {
+        let v_sqlite = lower(unwrap_or(sqlite_clear, ""))
+        if v_sqlite == "0" or v_sqlite == "false" or v_sqlite == "off" or v_sqlite == "no" { return false }
+    }
+    return true
+}
+
+fn signature_commandes_discord() -> Text {
+    return hash_texte(commandes_json_discord())
+}
+
+fn sync_commandes_globales_auto(app_id: Text, token: Text, signature: Text) -> Bool {
+    if not sync_global_auto_actif() { return true }
+    let derniere = store_lire("_system", "discord.global_commands_signature")
+    if has(derniere) and unwrap_or(derniere, "") == signature { return true }
+    if vider_commandes_globales(app_id, token) {
+        let _sig = store_configurer("_system", "discord.global_commands_signature", signature)
+        let _audit = store_log_action("_system", "gateway", "commands_global_clear", app_id, "Purge globale automatique")
+        print("Auto-sync Discord : commandes globales purgées.")
+        return true
+    }
+    let _audit_fail = store_log_action("_system", "gateway", "commands_global_clear_failed", app_id, "Purge globale automatique échouée")
+    return false
+}
+
+fn sync_commandes_guilde_auto(app_id: Text, token: Text, guild: Text, nom: Text, signature: Text) -> Bool {
+    if not sync_auto_actif() or guild == "" { return false }
+    let _known = store_configurer(guild, "_meta.discord_known", "true")
+    if nom != "" { let _name = store_configurer(guild, "_meta.name", nom) }
+    let derniere = store_lire(guild, "discord.commands_signature")
+    if has(derniere) and unwrap_or(derniere, "") == signature { return true }
+    if enregistrer_commandes_guilde(app_id, token, guild, commandes_json_discord()) {
+        let _sig = store_configurer(guild, "discord.commands_signature", signature)
+        let _at = store_configurer(guild, "discord.commands_synced_at", text(epoch_maintenant()))
+        let _audit = store_log_action(guild, "gateway", "commands_sync", guild, "Synchronisation automatique des slash commands")
+        print("Auto-sync Discord : commandes synchronisées pour " + guild)
+        return true
+    }
+    let _audit_fail = store_log_action(guild, "gateway", "commands_sync_failed", guild, "Synchronisation automatique échouée")
+    return false
+}
+
+fn sync_commandes_ready_auto(token: Text, js: Text) -> Bool {
+    if not sync_auto_actif() { return false }
+    let app = env("DISCORD_APP_ID")
+    if not has(app) or unwrap_or(app, "") == "" { print("Auto-sync Discord ignoré : DISCORD_APP_ID manquant."); return false }
+    let app_id = unwrap_or(app, "")
+    let signature = signature_commandes_discord()
+    let _global = sync_commandes_globales_auto(app_id, token, signature)
+    var ok = true
+    var index = 0
+    while index < 250 {
+        let guild = json_chemin_texte(js, "d.guilds." + text(index) + ".id")
+        if not has(guild) { break }
+        let nom = unwrap_or(json_chemin_texte(js, "d.guilds." + text(index) + ".name"), "")
+        if not sync_commandes_guilde_auto(app_id, token, unwrap_or(guild, ""), nom, signature) { ok = false }
+        index = index + 1
+    }
+    return ok
+}
+
+fn sync_commandes_guild_create_auto(token: Text, js: Text) -> Bool {
+    if not sync_auto_actif() { return false }
+    let app = env("DISCORD_APP_ID")
+    if not has(app) or unwrap_or(app, "") == "" { print("Auto-sync Discord ignoré : DISCORD_APP_ID manquant."); return false }
+    let guild = unwrap_or(json_chemin_texte(js, "d.id"), "")
+    let nom = unwrap_or(json_chemin_texte(js, "d.name"), "")
+    return sync_commandes_guilde_auto(unwrap_or(app, ""), token, guild, nom, signature_commandes_discord())
+}
+
 fn endpoint(req: Requete) -> WebResultat {
     let interaction = discord_interaction_type(req)
     if has(interaction) and unwrap_or(interaction, 0) == 5 {
@@ -598,6 +689,8 @@ fn traiter_verifications_echeance(token: Text, guild: Text) {
 }
 
 fn mode_gateway() {
+    if not store_initialiser("noliae-discord.sqlite3") { print("Impossible d’ouvrir la base SQLite."); return }
+    let _db_init = store_configurer("_system", "schema_version", "2")
     let tok = env("DISCORD_BOT_TOKEN")
     if not has(tok) { print("DISCORD_BOT_TOKEN requis pour le mode gateway."); return }
     if not sodium_prete() { print("libsodium indisponible pour le Gateway."); return }
@@ -608,7 +701,9 @@ fn mode_gateway() {
     let intents = 37506
     gateway_run(token, intents, fn (js: Text) -> Bool {
             let evenement = unwrap_or(json_texte_champ(js, "t"), "")
-            if evenement != "MESSAGE_CREATE" and evenement != "MESSAGE_UPDATE" and evenement != "MESSAGE_DELETE" and evenement != "GUILD_MEMBER_ADD" and evenement != "GUILD_MEMBER_REMOVE" and evenement != "GUILD_MEMBER_UPDATE" and evenement != "GUILD_BAN_ADD" and evenement != "GUILD_BAN_REMOVE" and evenement != "GUILD_ROLE_CREATE" and evenement != "GUILD_ROLE_DELETE" and evenement != "CHANNEL_CREATE" and evenement != "CHANNEL_DELETE" and evenement != "VOICE_STATE_UPDATE" and evenement != "NOLIAE_TICK" { return false }
+            if evenement != "READY" and evenement != "GUILD_CREATE" and evenement != "MESSAGE_CREATE" and evenement != "MESSAGE_UPDATE" and evenement != "MESSAGE_DELETE" and evenement != "GUILD_MEMBER_ADD" and evenement != "GUILD_MEMBER_REMOVE" and evenement != "GUILD_MEMBER_UPDATE" and evenement != "GUILD_BAN_ADD" and evenement != "GUILD_BAN_REMOVE" and evenement != "GUILD_ROLE_CREATE" and evenement != "GUILD_ROLE_DELETE" and evenement != "CHANNEL_CREATE" and evenement != "CHANNEL_DELETE" and evenement != "VOICE_STATE_UPDATE" and evenement != "NOLIAE_TICK" { return false }
+            if evenement == "READY" { return sync_commandes_ready_auto(token, js) }
+            if evenement == "GUILD_CREATE" { return sync_commandes_guild_create_auto(token, js) }
             if acl_serveur_bloque(js) { return false }
             if acl_utilisateur_bloque(js) { return false }
             if acl_maintenance() { return false }
