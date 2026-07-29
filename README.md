@@ -295,6 +295,8 @@ Commandes utiles :
 - `./bot clear-global-commands` : supprime les commandes globales, propagation Discord plus lente ;
 - `./bot sync-guild ID_SERVEUR` : purge puis ré-enregistre immédiatement le serveur.
 
+Après synchronisation, `/setup` ouvre le guide de configuration rapide directement dans Discord.
+
 Démarrer l’endpoint d’interactions :
 
 ```sh

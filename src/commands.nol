@@ -744,6 +744,17 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             + ligne_carte("Serveur", guild))) }
         return discord_reponse_ephemere(carte_nolcbot("⚠️", "Base indisponible", "│ SQLite n’est pas initialisée."))
     }
+    if nom == "setup" {
+        if not acl_admin(req.corps) { return acl_refus("admin") }
+        return discord_reponse_ephemere("## ⚙️ Setup NolcBot\n"
+            + "Configuration rapide du serveur.\n\n"
+            + "1. **Voir les modules**\n`/modules`\n\n"
+            + "2. **Activer/désactiver un module**\n`/config clé:module.moderation.enabled valeur:true`\n`/config clé:module.ai.enabled valeur:false`\n\n"
+            + "3. **Créer un groupe ACL**\n`/groupe role groupe:Admin role:@Admin`\n\n"
+            + "4. **Ajouter une permission**\n`/permission action:ajouter groupe:Admin permission:admin`\n\n"
+            + "5. **Voir les réglages**\n`/config_list`\n\n"
+            + "6. **Aide détaillée**\n`/help module:admin`")
+    }
     if nom == "version" {
         return discord_reponse_ephemere(carte_nolcbot("🤖", "Version",
             ligne_carte("Nom", "NolcBot")
@@ -1639,6 +1650,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
 fn commandes_json() -> Text {
     return "["
         + "{\"name\":\"help\",\"description\":\"Affiche l’aide du bot\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"module\",\"description\":\"modération, tickets, ia, admin, communauté, intégrations, économie, fun, stats ou utils\",\"required\":false}]},"
+        + "{\"name\":\"setup\",\"description\":\"Guide de configuration rapide du serveur\",\"type\":1},"
         + "{\"name\":\"ai_config\",\"description\":\"Configure le fournisseur IA du serveur\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"fournisseur\",\"description\":\"openai, gemini ou mistral\",\"required\":true},{\"type\":3,\"name\":\"api_key\",\"description\":\"Clé API du fournisseur\",\"required\":true},{\"type\":3,\"name\":\"modele\",\"description\":\"Modèle à utiliser\",\"required\":true}]},"
         + "{\"name\":\"ai_admin_plan\",\"description\":\"Demande un plan de serveur à l’IA\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"demande\",\"description\":\"Structure souhaitée\",\"required\":true}]},"
         + "{\"name\":\"ai_admin_confirm\",\"description\":\"Exécute le plan IA en attente\",\"type\":1},"
