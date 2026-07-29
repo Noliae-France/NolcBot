@@ -202,7 +202,7 @@ fi
 
 section "Enregistrement des commandes slash"
 ./bot register >/dev/null
-./bot register-guild "$DISCORD_TEST_GUILD_ID" >/dev/null
+./bot sync-guild "$DISCORD_TEST_GUILD_ID" >/dev/null
 
 section "Enregistrement immédiat des commandes sur le serveur de test"
 ./bot commands-json-discord >"$work_dir/commands_payload.json"

@@ -281,6 +281,20 @@ DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... ./bot register
 
 Discord limite les commandes slash d’une application à **100 commandes par scope**. NolcBot garde un catalogue interne plus large, mais `./bot register` publie un lot Discord compatible via `./bot commands-json-discord`; les commandes d’administration critiques, dont `/update_check` et `/update_plan`, sont incluses dans ce lot.
 
+Si d’anciennes commandes slash restent visibles sur un serveur de test, synchroniser le scope serveur :
+
+```sh
+DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... ./bot sync-guild ID_SERVEUR
+```
+
+Commandes utiles :
+
+- `./bot register` : remplace les commandes globales compatibles Discord ;
+- `./bot register-guild ID_SERVEUR` : remplace les commandes d’un serveur ;
+- `./bot clear-guild-commands ID_SERVEUR` : supprime les commandes d’un serveur ;
+- `./bot clear-global-commands` : supprime les commandes globales, propagation Discord plus lente ;
+- `./bot sync-guild ID_SERVEUR` : purge puis ré-enregistre immédiatement le serveur.
+
 Démarrer l’endpoint d’interactions :
 
 ```sh

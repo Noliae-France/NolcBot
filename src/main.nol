@@ -23,6 +23,24 @@ fn enregistrer_commandes_guilde(app_id: Text, token: Text, guild: Text, corps_co
     return false
 }
 
+fn vider_commandes_globales(app_id: Text, token: Text) -> Bool {
+    let ro = discord_rest("PUT", "/api/v10/applications/" + app_id + "/commands", token, "[]")
+    if not has(ro) { return false }
+    let code = http_statut(unwrap_or(ro, ""))
+    print("Purge globale Discord : HTTP " + text(code))
+    return code == 200 or code == 201
+}
+
+fn vider_commandes_guilde(app_id: Text, token: Text, guild: Text) -> Bool {
+    if guild == "" { return false }
+    let chemin = "/api/v10/applications/" + app_id + "/guilds/" + guild + "/commands"
+    let ro = discord_rest("PUT", chemin, token, "[]")
+    if not has(ro) { return false }
+    let code = http_statut(unwrap_or(ro, ""))
+    print("Purge serveur Discord : HTTP " + text(code))
+    return code == 200 or code == 201
+}
+
 fn endpoint(req: Requete) -> WebResultat {
     let interaction = discord_interaction_type(req)
     if has(interaction) and unwrap_or(interaction, 0) == 5 {
@@ -911,6 +929,32 @@ fn main() {
         if has(app) and has(tok) and enregistrer_commandes_guilde(unwrap_or(app, ""), unwrap_or(tok, ""), guild_register, commandes_json_discord()) {
             print("✅ Commandes serveur enregistrées.")
         } else { print("❌ DISCORD_APP_ID/DISCORD_BOT_TOKEN/guild_id requis ou enregistrement serveur échoué.") }
+        return
+    }
+    if len(a) >= 1 and get(a, 0) == "clear-global-commands" {
+        let app = env("DISCORD_APP_ID")
+        let tok = env("DISCORD_BOT_TOKEN")
+        if has(app) and has(tok) and vider_commandes_globales(unwrap_or(app, ""), unwrap_or(tok, "")) {
+            print("✅ Commandes globales supprimées.")
+        } else { print("❌ DISCORD_APP_ID/DISCORD_BOT_TOKEN requis ou purge globale échouée.") }
+        return
+    }
+    if len(a) >= 2 and get(a, 0) == "clear-guild-commands" {
+        let app = env("DISCORD_APP_ID")
+        let tok = env("DISCORD_BOT_TOKEN")
+        let guild_clear = get(a, 1)
+        if has(app) and has(tok) and vider_commandes_guilde(unwrap_or(app, ""), unwrap_or(tok, ""), guild_clear) {
+            print("✅ Commandes serveur supprimées.")
+        } else { print("❌ DISCORD_APP_ID/DISCORD_BOT_TOKEN/guild_id requis ou purge serveur échouée.") }
+        return
+    }
+    if len(a) >= 2 and get(a, 0) == "sync-guild" {
+        let app = env("DISCORD_APP_ID")
+        let tok = env("DISCORD_BOT_TOKEN")
+        let guild_sync = get(a, 1)
+        if has(app) and has(tok) and vider_commandes_guilde(unwrap_or(app, ""), unwrap_or(tok, ""), guild_sync) and enregistrer_commandes_guilde(unwrap_or(app, ""), unwrap_or(tok, ""), guild_sync, commandes_json_discord()) {
+            print("✅ Commandes serveur synchronisées.")
+        } else { print("❌ DISCORD_APP_ID/DISCORD_BOT_TOKEN/guild_id requis ou synchronisation serveur échouée.") }
         return
     }
     let pko = store_lire("_system", "discord.public_key")
