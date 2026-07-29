@@ -3,6 +3,26 @@ import "commands.nol"
 import "store.nol"
 import "automod.nol"
 
+fn enregistrer_commandes_guilde(app_id: Text, token: Text, guild: Text, corps_commandes: Text) -> Bool {
+    if guild == "" { return false }
+    let chemin = "/api/v10/applications/" + app_id + "/guilds/" + guild + "/commands"
+    let ro = discord_rest("PUT", chemin, token, corps_commandes)
+    if not has(ro) {
+        print("Échec réseau/TLS vers discord.com")
+        return false
+    }
+    let reponse = unwrap_or(ro, "")
+    let code = http_statut(reponse)
+    print("Discord serveur a répondu : HTTP " + text(code))
+    if code == 200 or code == 201 { return true }
+    let sep = find(reponse, "\r\n\r\n")
+    if has(sep) {
+        let d = unwrap_or(sep, 0) + 4
+        print("Corps : " + sub(reponse, d, len(reponse)))
+    }
+    return false
+}
+
 fn endpoint(req: Requete) -> WebResultat {
     let interaction = discord_interaction_type(req)
     if has(interaction) and unwrap_or(interaction, 0) == 5 {
@@ -882,6 +902,15 @@ fn main() {
         if has(app) and has(tok) and discord_enregistrer_commandes(unwrap_or(app, ""), unwrap_or(tok, ""), commandes_json_discord()) {
             print("✅ Commandes enregistrées.")
         } else { print("❌ DISCORD_APP_ID/DISCORD_BOT_TOKEN requis ou enregistrement échoué.") }
+        return
+    }
+    if len(a) >= 2 and get(a, 0) == "register-guild" {
+        let app = env("DISCORD_APP_ID")
+        let tok = env("DISCORD_BOT_TOKEN")
+        let guild_register = get(a, 1)
+        if has(app) and has(tok) and enregistrer_commandes_guilde(unwrap_or(app, ""), unwrap_or(tok, ""), guild_register, commandes_json_discord()) {
+            print("✅ Commandes serveur enregistrées.")
+        } else { print("❌ DISCORD_APP_ID/DISCORD_BOT_TOKEN/guild_id requis ou enregistrement serveur échoué.") }
         return
     }
     let pko = store_lire("_system", "discord.public_key")

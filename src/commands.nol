@@ -130,6 +130,18 @@ fn appelant(corps: Text) -> Text {
     return "toi"
 }
 
+fn option_texte(corps: Text, nom_option: Text) -> Option<Text> {
+    var index = 0
+    while index < 25 {
+        let nom = json_chemin_texte(corps, "data.options." + text(index) + ".name")
+        if has(nom) and unwrap_or(nom, "") == nom_option {
+            return json_chemin_texte(corps, "data.options." + text(index) + ".value")
+        }
+        index = index + 1
+    }
+    return none
+}
+
 fn notifier_log_serveur(token: Text, guild: Text, action: Text, cible: Text, raison: Text) -> Bool {
     var cle = "log.channel"
     if action == "BAN" or action == "KICK" or action == "UNBAN" or action == "MUTE" or action == "UNMUTE" or action == "LOCK" or action == "UNLOCK" or action == "WARN" or action == "CLEAR" or action == "SLOWMODE" { cle = "log.moderation_channel" }
@@ -1269,10 +1281,24 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     }
     if nom == "permission" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
-        let sous = unwrap_or(json_chemin_texte(req.corps, "data.options.0.name"), "")
-        let groupe = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.0.value"), "")
-        let permission = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.1.value"), "")
+        var sous = unwrap_or(json_chemin_texte(req.corps, "data.options.0.name"), "")
+        var groupe = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.0.value"), "")
+        var permission = unwrap_or(json_chemin_texte(req.corps, "data.options.0.options.1.value"), "")
+        let action_plate = option_texte(req.corps, "action")
+        if has(action_plate) {
+            sous = lower(unwrap_or(action_plate, ""))
+            groupe = unwrap_or(option_texte(req.corps, "groupe"), "")
+            permission = lower(unwrap_or(option_texte(req.corps, "permission"), ""))
+        }
         let guild = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "")
+        if sous == "" {
+            return discord_reponse_ephemere("## 🛡️ Permissions ACL\n"
+                + "`/permission action:liste groupe:Admin`\n"
+                + "`/permission action:ajouter groupe:Modo permission:warn`\n"
+                + "`/permission action:show groupe:Modo permission:warn`\n"
+                + "`/permission action:retirer groupe:Modo permission:warn`\n\n"
+                + "Permissions courantes : `admin`, `ban`, `kick`, `mute`, `warn`, `clear`, `slowmode`, `lock`, `ticket_close`.")
+        }
         if sous == "liste" {
             if groupe == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/permission liste groupe")) }
             let permissions = ["admin", "ban", "unban", "kick", "mute", "unmute", "warn", "clear", "slowmode", "lock", "unlock", "nickname", "note", "ticket_close"]
@@ -1308,7 +1334,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             if ok and ok_lookup { return discord_reponse_message(carte_nolcbot("🛡️", "Permission retirée", ligne_carte("Groupe", groupe) + ligne_carte("Permission", permission))) }
             return discord_reponse_ephemere(carte_erreur("Impossible de retirer la permission."))
         }
-        if sous != "ajouter" or groupe == "" or permission == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/permission ajouter groupe permission")) }
+        if sous != "ajouter" or groupe == "" or permission == "" or guild == "" { return discord_reponse_ephemere(carte_usage("/permission action:ajouter groupe:Nom permission:warn")) }
         let ok_group = store_configurer(guild, "acl.group." + groupe + ".permission." + permission, "true")
         let groupes_existants = unwrap_or(store_lire(guild, "acl.permission." + permission + ".groups"), "")
         var groupes_nouveaux = groupes_existants
@@ -1628,7 +1654,7 @@ fn commandes_json() -> Text {
         + "{\"name\":\"config_delete\",\"description\":\"Supprime une configuration\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"clé\",\"description\":\"Nom du réglage\",\"required\":true}]},"
         + "{\"name\":\"modules\",\"description\":\"Affiche l’état des modules du serveur\",\"type\":1},"
         + "{\"name\":\"groupe\",\"description\":\"Gère les groupes ACL\",\"type\":1,\"options\":[{\"type\":1,\"name\":\"role\",\"description\":\"Lie un groupe à un rôle Discord\",\"options\":[{\"type\":3,\"name\":\"groupe\",\"description\":\"Nom du groupe\",\"required\":true},{\"type\":8,\"name\":\"role\",\"description\":\"Rôle Discord\",\"required\":true}]},{\"type\":1,\"name\":\"show\",\"description\":\"Affiche le rôle d’un groupe\",\"options\":[{\"type\":3,\"name\":\"groupe\",\"description\":\"Nom du groupe\",\"required\":true}]},{\"type\":1,\"name\":\"liste\",\"description\":\"Liste les groupes ACL configurés\"},{\"type\":1,\"name\":\"supprimer\",\"description\":\"Supprime un groupe\",\"options\":[{\"type\":3,\"name\":\"groupe\",\"description\":\"Nom du groupe\",\"required\":true}]}]},"
-        + "{\"name\":\"permission\",\"description\":\"Gère les permissions ACL\",\"type\":1,\"options\":[{\"type\":1,\"name\":\"ajouter\",\"description\":\"Ajoute une permission\",\"options\":[{\"type\":3,\"name\":\"groupe\",\"description\":\"Nom du groupe\",\"required\":true},{\"type\":3,\"name\":\"permission\",\"description\":\"Nom de la permission\",\"required\":true}]},{\"type\":1,\"name\":\"show\",\"description\":\"Vérifie une permission\",\"options\":[{\"type\":3,\"name\":\"groupe\",\"description\":\"Nom du groupe\",\"required\":true},{\"type\":3,\"name\":\"permission\",\"description\":\"Nom de la permission\",\"required\":true}]},{\"type\":1,\"name\":\"liste\",\"description\":\"Liste les permissions d’un groupe\",\"options\":[{\"type\":3,\"name\":\"groupe\",\"description\":\"Nom du groupe\",\"required\":true}]},{\"type\":1,\"name\":\"retirer\",\"description\":\"Retire une permission\",\"options\":[{\"type\":3,\"name\":\"groupe\",\"description\":\"Nom du groupe\",\"required\":true},{\"type\":3,\"name\":\"permission\",\"description\":\"Nom de la permission\",\"required\":true}]}]},"
+        + "{\"name\":\"permission\",\"description\":\"Gère les permissions ACL\",\"type\":1,\"options\":[{\"type\":3,\"name\":\"action\",\"description\":\"ajouter, show, liste ou retirer\",\"required\":false},{\"type\":3,\"name\":\"groupe\",\"description\":\"Nom du groupe ACL\",\"required\":false},{\"type\":3,\"name\":\"permission\",\"description\":\"admin, ban, kick, mute, warn, clear, slowmode, lock...\",\"required\":false}]},"
         + "{\"name\":\"ping\",\"description\":\"Vérifie que le bot répond\",\"type\":1},"
         + "{\"name\":\"userinfo\",\"description\":\"Affiche les informations d’un utilisateur\",\"type\":1,\"options\":[{\"type\":6,\"name\":\"membre\",\"description\":\"Membre à consulter (optionnel)\",\"required\":false}]},"
         + "{\"name\":\"user\",\"description\":\"Alias de userinfo\",\"type\":1},"
