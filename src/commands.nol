@@ -1858,16 +1858,17 @@ fn commande_json_extraire(source: Text, nom: Text) -> Option<Text> {
 
 fn commandes_json_discord_prioritaires(source: Text) -> Text {
     let noms = [
-        "help","setup","ping","serverinfo","userinfo","weather","remind","health","version","update_check","update_plan",
-        "modules","config","config_get","config_list","config_delete","groupe","permission","aclrole","role","roleconfig","verify",
+        "help","setup","ping","serverinfo","userinfo","avatar","banner","weather","qr","password","remind","reminders","timezone","calc","health","version","update_check","update_plan",
+        "modules","config","config_get","config_list","config_delete","groupe","permission","aclrole","role","roleconfig","verify","channel_edit",
         "ban","ban_temp","kick","unban","mute","unmute","clear","slowmode","lock","unlock","warn","warnings","sanctions","note","report",
-        "ticket","ticket_close","ticket_add","ticket_remove","ticket_claim","ticket_transcript","ticket_priority",
-        "announce","poll","poll_vote","poll_close","faq","faq_ai","suggest","suggest_status","partnership","invites","invite_stats","profile","achievements",
-        "stats","stats_report","stats_csv","logs_csv",
-        "rss","rss_subscribe","youtube_subscribe","youtube_list","twitch_status","twitch_subscribe","github_subscribe","reddit_subscribe","site_status",
+        "ticket","ticket_close","ticket_add","ticket_remove","ticket_claim","ticket_unclaim","ticket_transcript","ticket_priority",
+        "announce","poll","poll_vote","poll_close","faq","faq_ai","suggest","suggest_status",
+        "stats","stats_report","logs_csv",
+        "rss","rss_subscribe","youtube_subscribe","youtube_list","twitch_status","twitch_subscribe","github_subscribe","reddit_subscribe","site_status","calendar","calendar_subscribe",
         "ai","ai_config","summarize","rewrite","ideas","translate","ai_admin_plan","ai_admin_confirm","ai_mod_alert","ai_mod_incident","ai_mod_confirm",
-        "daily","weekly","balance","leaderboard","work","shop","buy","inventory","transactions","pay",
-        "roll","coin","8ball","pfc","joke","meme","quiz","morpion","meme_list"
+        "daily","balance","shop","buy","pay",
+        "roll","8ball","meme","quiz","morpion",
+        "voice","music","form_create","form_open"
     ]
     var sortie = "["
     var total = 0
