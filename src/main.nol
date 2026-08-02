@@ -41,6 +41,15 @@ fn vider_commandes_guilde(app_id: Text, token: Text, guild: Text) -> Bool {
     return code == 200 or code == 201
 }
 
+fn discord_envoie_embed(token: Text, salon: Text, titre: Text, description: Text, couleur: Int) -> Bool {
+    if token == "" or salon == "" or titre == "" or description == "" { return false }
+    let corps = "{\"embeds\":[{\"title\":" + json_texte(titre) + ",\"description\":" + json_texte(description) + ",\"color\":" + text(couleur) + ",\"footer\":{\"text\":\"NolcBot • Noliae\"}}]}"
+    let ro = discord_rest("POST", "/api/v10/channels/" + salon + "/messages", token, corps)
+    if not has(ro) { return false }
+    let code = http_statut(unwrap_or(ro, ""))
+    return code == 200 or code == 201
+}
+
 fn sync_auto_actif() -> Bool {
     let env_auto = env("NOLIAE_AUTO_SYNC_COMMANDS")
     if has(env_auto) {
@@ -401,7 +410,7 @@ fn servir(fd: Int, pre: List<Fn(Requete) -> Option<Reponse>>) {
         let secret_schema = store_lire("_system", "dashboard.secret")
         let fourni_schema = http_entete(buf, "X-Noliae-Admin")
         if not has(secret_schema) or len(unwrap_or(secret_schema, "")) < 32 or fourni_schema == "" or fourni_schema != unwrap_or(secret_schema, "") { let _forbidden_schema = tcp_write(fd, "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"); return }
-        let schema = "{\"modules\":[\"security\",\"moderation\",\"community\",\"fun\",\"voice\",\"stats\",\"economy\",\"ai\",\"integrations\"],\"keys\":[\"module.<module>.enabled\",\"welcome_channel\",\"goodbye_channel\",\"auto_role\",\"log.channel\",\"log.moderation_channel\",\"log.security_channel\",\"log.community_channel\",\"prefix\",\"maintenance\",\"ai.enabled\",\"xp.enabled\",\"xp.multiplier\",\"xp.cooldown_seconds\",\"xp.exclude.channel.<channel_id>\",\"xp.exclude.role.<role_id>\",\"community.suggestions_anonymous\",\"ticket.priority.<channel_id>\",\"automod.invites\",\"automod.links\",\"automod.caps\",\"automod.mentions\",\"automod.banned_words\",\"automod.duplicates\",\"antispam.max_messages\",\"raid.join_limit\",\"security.recent_account_seconds\",\"security.recent_account_action\",\"security.nuke_threshold\",\"moderation.warn_threshold\",\"moderation.warn_timeout_seconds\",\"reports.channel\",\"voice.role_seconds\",\"voice.role_id\",\"overlay.template\",\"overlay.title\",\"overlay.subtitle\",\"overlay.accent\",\"overlay.accent_secondary\",\"overlay.background\",\"overlay.position\",\"overlay.width\",\"overlay.opacity\",\"welcome_message\",\"verification.code\",\"verification.role_id\",\"verification.unverified_role_id\",\"verification.timeout_seconds\",\"verification.timeout_action\",\"music.vote_threshold\"]}"
+        let schema = "{\"modules\":[\"security\",\"moderation\",\"community\",\"fun\",\"voice\",\"stats\",\"economy\",\"ai\",\"integrations\"],\"keys\":[\"module.<module>.enabled\",\"welcome_channel\",\"goodbye_channel\",\"auto_role\",\"log.channel\",\"log.moderation_channel\",\"log.security_channel\",\"log.community_channel\",\"prefix\",\"maintenance\",\"ai.enabled\",\"xp.enabled\",\"xp.multiplier\",\"xp.cooldown_seconds\",\"xp.exclude.channel.<channel_id>\",\"xp.exclude.role.<role_id>\",\"community.suggestions_anonymous\",\"ticket.priority.<channel_id>\",\"automod.invites\",\"automod.links\",\"automod.caps\",\"automod.mentions\",\"automod.banned_words\",\"automod.duplicates\",\"antispam.max_messages\",\"raid.join_limit\",\"security.recent_account_seconds\",\"security.recent_account_action\",\"security.nuke_threshold\",\"moderation.warn_threshold\",\"moderation.warn_timeout_seconds\",\"reports.channel\",\"voice.role_seconds\",\"voice.role_id\",\"overlay.template\",\"overlay.title\",\"overlay.subtitle\",\"overlay.accent\",\"overlay.accent_secondary\",\"overlay.background\",\"overlay.position\",\"overlay.width\",\"overlay.opacity\",\"welcome_message\",\"goodbye_message\",\"verification.code\",\"verification.role_id\",\"verification.unverified_role_id\",\"verification.timeout_seconds\",\"verification.timeout_action\",\"music.vote_threshold\"]}"
         let reponse_schema = "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: " + text(len(schema)) + "\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" + schema
         let _schema = tcp_write(fd, reponse_schema)
         return
@@ -854,8 +863,8 @@ fn mode_gateway() {
                 let timeout_verification = unwrap_or(parse_int(unwrap_or(store_lire(guild, "verification.timeout_seconds"), "0")), 0)
                 if has(role_non_verifie) and membre != "" { let _role_pending = discord_ajouter_role(token, guild, membre, unwrap_or(role_non_verifie, "")) }
                 if timeout_verification > 0 and membre != "" { let _pending = store_configurer(guild, "verification.pending." + membre, text(epoch_maintenant())) }
-                var texte_accueil = unwrap_or(store_lire(guild, "welcome_message"), "👋 Bienvenue <@{user}> !")
-                if has(accueil) and membre != "" { return discord_envoie_message(token, unwrap_or(accueil, ""), remplace(texte_accueil, "{user}", "<@" + membre + ">")) }
+                var texte_accueil = unwrap_or(store_lire(guild, "welcome_message"), "Bienvenue <@{user}> dans la communauté !")
+                if has(accueil) and membre != "" { return discord_envoie_embed(token, unwrap_or(accueil, ""), "👋 Bienvenue !", remplace(texte_accueil, "{user}", "<@" + membre + ">"), 5793266) }
                 return false
             }
             if evenement == "GUILD_MEMBER_REMOVE" {
@@ -864,8 +873,8 @@ fn mode_gateway() {
                 var depart = store_lire(guild, "goodbye_channel")
                 let membre = unwrap_or(json_chemin_texte(js, "d.user.id"), "")
                 let _audit = store_log_action(guild, membre, "member_leave", membre, "Départ d’un membre")
-                let texte_depart = unwrap_or(store_lire(guild, "goodbye_message"), "👋 <@{user}> a quitté le serveur.")
-                if has(depart) and membre != "" { return discord_envoie_message(token, unwrap_or(depart, ""), remplace(texte_depart, "{user}", "<@" + membre + ">")) }
+                let texte_depart = unwrap_or(store_lire(guild, "goodbye_message"), "<@{user}> a quitté le serveur.")
+                if has(depart) and membre != "" { return discord_envoie_embed(token, unwrap_or(depart, ""), "👋 À bientôt", remplace(texte_depart, "{user}", "<@" + membre + ">"), 10070709) }
                 return false
             }
             if salon == "" { return false }

@@ -18,6 +18,15 @@ fn discord_envoie_message(token: Text, salon: Text, contenu: Text) -> Bool {
     return code == 200 or code == 201
 }
 
+fn discord_envoie_embed(token: Text, salon: Text, titre: Text, description: Text, couleur: Int) -> Bool {
+    if token == "" or salon == "" or titre == "" or description == "" { return false }
+    let corps = "{\"embeds\":[{\"title\":" + json_texte(titre) + ",\"description\":" + json_texte(description) + ",\"color\":" + text(couleur) + ",\"footer\":{\"text\":\"NolcBot • Noliae\"}}]}"
+    let ro = discord_rest("POST", "/api/v10/channels/" + salon + "/messages", token, corps)
+    if not has(ro) { return false }
+    let code = http_statut(unwrap_or(ro, ""))
+    return code == 200 or code == 201
+}
+
 // Envoie une requête HTTPS à discord.com et renvoie la réponse HTTP brute.
 fn discord_rest_tenter(methode: Text, chemin: Text, token: Text, corps: Text) -> Option<Text> {
     let fdo = tcp_connect("discord.com", 443)

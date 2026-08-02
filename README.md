@@ -307,6 +307,8 @@ Commandes de secours pour debug/CI :
 
 Après l’auto-sync, `/setup` ouvre le guide de configuration rapide directement dans Discord sans action manuelle.
 
+Les réponses visibles principales utilisent des **embeds Discord** : `/help`, `/setup`, `/ping`, `/userinfo`, `/serverinfo`, ainsi que les messages d’accueil et de départ envoyés par le Gateway. Les textes `welcome_message` et `goodbye_message` restent personnalisables par serveur depuis SQLite/dashboard.
+
 Démarrer l’endpoint d’interactions :
 
 ```sh

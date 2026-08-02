@@ -62,6 +62,20 @@ fn carte_info(icone: Text, titre: Text, texte: Text) -> Text {
     return carte_nolcbot(icone, titre, "│ " + texte)
 }
 
+fn reponse_embed(titre: Text, description: Text, couleur: Int, ephemere: Bool) -> Reponse {
+    var flags = ""
+    if ephemere { flags = ",\"flags\":64" }
+    return reponse_json("{\"type\":4,\"data\":{\"embeds\":[{\"title\":" + json_texte(titre) + ",\"description\":" + json_texte(description) + ",\"color\":" + text(couleur) + ",\"footer\":{\"text\":\"NolcBot • Noliae\"}}]" + flags + "}}")
+}
+
+fn reponse_embed_ephemere(titre: Text, description: Text, couleur: Int) -> Reponse {
+    return reponse_embed(titre, description, couleur, true)
+}
+
+fn reponse_embed_message(titre: Text, description: Text, couleur: Int) -> Reponse {
+    return reponse_embed(titre, description, couleur, false)
+}
+
 fn version_nolcbot() -> Text {
     let v = env("NOLCBOT_VERSION")
     if has(v) and unwrap_or(v, "") != "" { return unwrap_or(v, "") }
@@ -69,20 +83,19 @@ fn version_nolcbot() -> Text {
 }
 
 fn aide_design() -> Text {
-    return "## 📚 NolcBot\n"
-        + "**Centre d’aide** — commandes rangées par modules.\n"
+    return "**Centre d’aide premium** — commandes rangées par modules.\n"
         + "Tape `/` pour chercher une commande avec l’interface Discord.\n\n"
-        + "🛡️ **Modération**\n`/ban` `/kick` `/mute` `/warn` `/clear`\n\n"
-        + "🎫 **Tickets**\n`/ticket` `/ticket_claim` `/ticket_transcript`\n\n"
-        + "🤖 **IA & Admin assistant**\n`/ai` `/ai_admin_plan` `/ai_mod_alert`\n\n"
-        + "⚙️ **Configuration**\n`/config` `/modules` `/groupe` `/permission`\n\n"
-        + "👥 **Communauté**\n`/announce` `/poll` `/faq` `/suggest`\n\n"
-        + "🔌 **Intégrations**\n`/youtube_subscribe` `/twitch_subscribe` `/rss`\n\n"
-        + "💰 **Économie** · 🎮 **Fun** · 📊 **Stats** · 🧰 **Utils**\n"
-        + "`/daily` `/quiz` `/stats` `/userinfo` `/serverinfo`\n\n"
-        + "🔎 **Détail par module**\n"
-        + "`/help module:admin` `/help module:ia` `/help module:modération`\n"
-        + "`/help module:tickets` `/help module:intégrations`"
+        + "🛡️ **Modération** · `/ban` `/kick` `/mute` `/warn` `/clear`\n"
+        + "🎫 **Tickets** · `/ticket` `/ticket_claim` `/ticket_transcript`\n"
+        + "🤖 **IA** · `/ai` `/ai_admin_plan` `/ai_mod_alert`\n"
+        + "⚙️ **Admin** · `/config` `/modules` `/groupe` `/permission`\n"
+        + "👥 **Communauté** · `/announce` `/poll` `/faq` `/suggest`\n"
+        + "🔌 **Intégrations** · `/youtube_subscribe` `/twitch_subscribe` `/rss`\n"
+        + "💰 **Économie** · `/daily` `/balance` `/shop` `/pay`\n"
+        + "🎮 **Fun** · `/quiz` `/morpion` `/8ball` `/meme`\n"
+        + "📊 **Stats** · `/stats` `/stats_report` `/logs_csv`\n"
+        + "🧰 **Utils** · `/userinfo` `/serverinfo` `/weather` `/remind`\n\n"
+        + "🔎 Détail : `/help module:modération|tickets|ia|admin|communauté|intégrations|économie|fun|stats|utils`"
 }
 
 fn aide_module(module: Text) -> Text {
@@ -746,14 +759,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     }
     if nom == "setup" {
         if not acl_admin(req.corps) { return acl_refus("admin") }
-        return discord_reponse_ephemere("## ⚙️ Setup NolcBot\n"
-            + "Configuration rapide du serveur.\n\n"
-            + "1. **Voir les modules**\n`/modules`\n\n"
-            + "2. **Activer/désactiver un module**\n`/config clé:module.moderation.enabled valeur:true`\n`/config clé:module.ai.enabled valeur:false`\n\n"
-            + "3. **Créer un groupe ACL**\n`/groupe role groupe:Admin role:@Admin`\n\n"
-            + "4. **Ajouter une permission**\n`/permission action:ajouter groupe:Admin permission:admin`\n\n"
-            + "5. **Voir les réglages**\n`/config_list`\n\n"
-            + "6. **Aide détaillée**\n`/help module:admin`")
+        return reponse_embed_ephemere("⚙️ Setup NolcBot", "Configuration rapide du serveur.\n\n1. **Voir les modules**\n`/modules`\n\n2. **Activer/désactiver un module**\n`/config clé:module.moderation.enabled valeur:true`\n`/config clé:module.ai.enabled valeur:false`\n\n3. **Créer un groupe ACL**\n`/groupe role groupe:Admin role:@Admin`\n\n4. **Ajouter une permission**\n`/permission action:ajouter groupe:Admin permission:admin`\n\n5. **Voir les réglages**\n`/config_list`\n\n6. **Aide détaillée**\n`/help module:admin`", 5793266)
     }
     if nom == "version" {
         return discord_reponse_ephemere(carte_nolcbot("🤖", "Version",
@@ -1417,8 +1423,8 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
     }
     if nom == "help" {
         let module_aide = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
-        if module_aide != "" { return discord_reponse_ephemere(aide_module(module_aide)) }
-        return discord_reponse_ephemere(aide_design())
+        if module_aide != "" { return reponse_embed_ephemere("📚 Aide module", aide_module(module_aide), 5793266) }
+        return reponse_embed_ephemere("📚 Centre d’aide NolcBot", aide_design(), 5793266)
     }
     if nom == "nickname" {
         if not acl_autorise(req.corps, "nickname") { return acl_refus("nickname") }
@@ -1536,10 +1542,7 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         return discord_reponse_ephemere(carte_usage("/mute membre secondes"))
     }
     if nom == "ping" {
-        return discord_reponse_message(carte_nolcbot("🏓", "Pong",
-            ligne_carte("Statut", "en ligne")
-            + ligne_carte("Runtime", "Nolc natif")
-            + ligne_carte("SQLite", text(store_integrite_ok()))))
+        return reponse_embed_message("🏓 Pong", "**Statut** : en ligne\n**Runtime** : Nolc natif\n**SQLite** : `" + text(store_integrite_ok()) + "`", 3581515)
     }
     if nom == "userinfo" or nom == "user" {
         let cible = json_chemin_texte(req.corps, "data.options.0.value")
@@ -1562,11 +1565,8 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
             }
         }
         var ligne_pseudo = ""
-        if pseudo != "" { ligne_pseudo = "│ **Pseudo serveur** " + pseudo + "\n" }
-        return discord_reponse_ephemere(carte_nolcbot("👤", "Utilisateur",
-            "│ **Nom** " + nom_utilisateur + "\n"
-            + ligne_pseudo
-            + ligne_carte("ID", identifiant)))
+        if pseudo != "" { ligne_pseudo = "\n**Pseudo serveur** : " + pseudo }
+        return reponse_embed_ephemere("👤 Utilisateur", "**Nom** : " + nom_utilisateur + ligne_pseudo + "\n**ID** : `" + identifiant + "`", 3447003)
     }
     if nom == "serverinfo" {
         let serveur = unwrap_or(json_chemin_texte(req.corps, "guild_id"), "inconnu")
@@ -1587,13 +1587,8 @@ fn commande_discord(req: Requete, nom: Text) -> Reponse {
         if nom_serveur == "" { nom_serveur = "Serveur Discord" }
         if compteur == "" or compteur == "0" { compteur = "inconnu" }
         var ligne_presence = ""
-        if presence != "" and presence != "0" { ligne_presence = ligne_carte("En ligne approx.", presence) }
-        return discord_reponse_ephemere(carte_nolcbot("🏠", nom_serveur,
-            "│ **Nom** " + nom_serveur + "\n"
-            + ligne_carte("ID", serveur)
-            + ligne_carte("Membres", compteur)
-            + ligne_presence
-            + "│ **Requêteur** <@" + membre + ">\n"))
+        if presence != "" and presence != "0" { ligne_presence = "\n**En ligne approx.** : `" + presence + "`" }
+        return reponse_embed_ephemere("🏠 " + nom_serveur, "**Nom** : " + nom_serveur + "\n**ID** : `" + serveur + "`\n**Membres** : `" + compteur + "`" + ligne_presence + "\n**Requêteur** : <@" + membre + ">", 16766720)
     }
     if nom == "roleinfo" {
         let role = unwrap_or(json_chemin_texte(req.corps, "data.options.0.value"), "")
