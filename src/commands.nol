@@ -97,25 +97,25 @@ fn aide_module(module: Text) -> Text {
         return "## 🤖 IA\n`/ai` `/summarize` `/rewrite` `/ideas` `/translate`\n`/ai_config` `/ai_admin_plan` `/ai_admin_confirm`\n`/ai_mod_alert` `/ai_mod_incident` `/ai_mod_confirm`\n`/community_event_ideas` `/community_rules`\n`/community_onboarding` `/community_announce_ai`"
     }
     if m == "admin" or m == "configuration" or m == "config" {
-        return "## ⚙️ Administration\n`/config` `/config_get` `/config_list` `/config_delete`\n`/modules` `/groupe` `/permission` `/aclrole`\n`/roleconfig` `/role_temp` `/channel_edit`\n`/channel_sync_config` `/verify`\n`/update_check` `/update_plan`"
+        return "## ⚙️ Administration\n`/config` `/config_get` `/config_list` `/config_delete`\n`/modules` `/groupe` `/permission` `/aclrole`\n`/role` `/roleconfig` `/verify`"
     }
     if m == "communauté" or m == "communaute" or m == "community" {
         return "## 👥 Communauté\n`/faq` `/faq_ai` `/announce` `/announce_schedule`\n`/poll` `/poll_vote` `/poll_close`\n`/suggest` `/suggest_status` `/partnership`\n`/invites` `/invite_stats`\n`/profile` `/achievements` `/xp_leaderboard` `/xp_reset`"
     }
     if m == "integrations" or m == "intégrations" or m == "integration" {
-        return "## 🔌 Intégrations\n`/rss` `/rss_subscribe` `/rss_unsubscribe`\n`/youtube_subscribe` `/youtube_list`\n`/github_subscribe` `/reddit_subscribe`\n`/twitch_status` `/twitch_subscribe` `/twitch_unsubscribe`\n`/twitch_list` `/site_status` `/calendar`\n`/calendar_subscribe` `/calendar_unsubscribe` `/webhook_test`"
+        return "## 🔌 Intégrations\n`/rss` `/rss_subscribe`\n`/youtube_subscribe` `/youtube_list`\n`/github_subscribe` `/reddit_subscribe`\n`/twitch_status` `/twitch_subscribe`\n`/site_status`"
     }
     if m == "économie" or m == "economie" or m == "economy" or m == "eco" {
         return "## 💰 Économie\n`/balance` `/leaderboard`\n`/daily` `/weekly` `/work`\n`/shop` `/buy` `/inventory`\n`/transactions` `/pay`"
     }
     if m == "fun" or m == "jeux" or m == "games" {
-        return "## 🎮 Fun\n`/roll` `/coin` `/8ball` `/pfc`\n`/joke` `/meme` `/meme_add` `/meme_remove` `/meme_list`\n`/quote` `/riddle` `/quiz` `/challenge`\n`/morpion` `/compatibility` `/choose`"
+        return "## 🎮 Fun\n`/roll` `/coin` `/8ball` `/pfc`\n`/joke` `/meme` `/meme_list`\n`/quiz` `/morpion`"
     }
     if m == "stats" or m == "statistiques" {
         return "## 📊 Statistiques\n`/stats` `/stats_csv` `/stats_report`\n`/logs_csv` `/data_export` `/data_delete`\n`/health` `/version` `/privacy`"
     }
     if m == "utils" or m == "utilitaires" or m == "utility" {
-        return "## 🧰 Utilitaires\n`/userinfo` `/user` `/serverinfo`\n`/roleinfo` `/channelinfo` `/avatar` `/banner`\n`/nickname` `/timestamp` `/timezone`\n`/calc` `/convert` `/weather` `/define`\n`/qr` `/password` `/remind` `/remind_repeat` `/reminders`"
+        return "## 🧰 Utilitaires\n`/userinfo` `/serverinfo`\n`/weather` `/remind`"
     }
     return "## 📚 Module inconnu\nModules disponibles : `modération`, `tickets`, `ia`, `admin`, `communauté`, `intégrations`, `économie`, `fun`, `stats`, `utils`."
 }
@@ -1834,6 +1834,62 @@ fn commandes_json_limite_discord(source: Text, limite: Int) -> Text {
     return sortie
 }
 
+fn commande_json_nom(objet: Text) -> Text {
+    return unwrap_or(json_chemin_texte(objet, "name"), "")
+}
+
+fn commande_json_extraire(source: Text, nom: Text) -> Option<Text> {
+    var profondeur = 0
+    var debut = -1
+    var i = 0
+    while i < len(source) {
+        let c = sub(source, i, 1)
+        if c == "{" {
+            if profondeur == 0 { debut = i }
+            profondeur = profondeur + 1
+        }
+        if c == "}" {
+            profondeur = profondeur - 1
+            if profondeur == 0 and debut >= 0 {
+                let objet = sub(source, debut, i - debut + 1)
+                if commande_json_nom(objet) == nom { return some(objet) }
+                debut = -1
+            }
+        }
+        i = i + 1
+    }
+    return none
+}
+
+fn commandes_json_discord_prioritaires(source: Text) -> Text {
+    let noms = [
+        "help","setup","ping","serverinfo","userinfo","weather","remind","health","version","update_check","update_plan",
+        "modules","config","config_get","config_list","config_delete","groupe","permission","aclrole","role","roleconfig","verify",
+        "ban","ban_temp","kick","unban","mute","unmute","clear","slowmode","lock","unlock","warn","warnings","sanctions","note","report",
+        "ticket","ticket_close","ticket_add","ticket_remove","ticket_claim","ticket_transcript","ticket_priority",
+        "announce","poll","poll_vote","poll_close","faq","faq_ai","suggest","suggest_status","partnership","invites","invite_stats","profile","achievements",
+        "stats","stats_report","stats_csv","logs_csv",
+        "rss","rss_subscribe","youtube_subscribe","youtube_list","twitch_status","twitch_subscribe","github_subscribe","reddit_subscribe","site_status",
+        "ai","ai_config","summarize","rewrite","ideas","translate","ai_admin_plan","ai_admin_confirm","ai_mod_alert","ai_mod_incident","ai_mod_confirm",
+        "daily","weekly","balance","leaderboard","work","shop","buy","inventory","transactions","pay",
+        "roll","coin","8ball","pfc","joke","meme","quiz","morpion","meme_list"
+    ]
+    var sortie = "["
+    var total = 0
+    var i = 0
+    while i < len(noms) and total < 100 {
+        let objet = commande_json_extraire(source, get(noms, i))
+        if has(objet) {
+            if total > 0 { sortie += "," }
+            sortie += unwrap_or(objet, "")
+            total = total + 1
+        }
+        i = i + 1
+    }
+    sortie += "]"
+    return sortie
+}
+
 fn commandes_json_discord() -> Text {
-    return commandes_json_limite_discord(commandes_json(), 100)
+    return commandes_json_discord_prioritaires(commandes_json())
 }

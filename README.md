@@ -281,7 +281,7 @@ DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... ./bot gateway
 
 Au démarrage Gateway, NolcBot reçoit la liste des serveurs Discord via `READY`, mémorise chaque `guild_id` dans SQLite puis publie automatiquement les commandes slash sur chaque serveur. Quand le bot rejoint un nouveau serveur, l’événement `GUILD_CREATE` déclenche aussi la synchronisation automatiquement.
 
-Discord limite les commandes slash d’une application à **100 commandes par scope**. NolcBot garde un catalogue interne plus large, mais l’auto-sync publie le lot compatible Discord via `./bot commands-json-discord`; les commandes critiques comme `/setup`, `/modules`, `/permission`, `/update_check` et `/update_plan` sont incluses dans ce lot.
+Discord limite les commandes slash d’une application à **100 commandes par scope**. NolcBot garde un catalogue interne plus large, mais l’auto-sync publie un lot Discord priorisé par modules via `./bot commands-json-discord`. Les commandes visibles dans le `/help` principal sont incluses dans ce lot, notamment `/setup`, `/ban`, `/ticket`, `/ai`, `/modules`, `/permission`, `/youtube_subscribe`, `/daily`, `/quiz`, `/morpion`, `/weather`, `/remind`, `/update_check` et `/update_plan`.
 
 Pour éviter les vieilles commandes globales qui traînent, NolcBot purge automatiquement les commandes globales au premier démarrage après un changement de catalogue, puis utilise les commandes serveur, beaucoup plus rapides à propager.
 
