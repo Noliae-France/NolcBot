@@ -162,19 +162,17 @@ Pour vérifier l’installation complète :
 ./check.sh
 ```
 
-Commandes disponibles : commandes générales (`/help`, `/ping`, `/about`, `/hello`, `/echo`), jeux (`/roll`, `/coin`, `/8ball`, `/pfc pierre|feuille|ciseaux`, `/joke`, `/meme`, `/meme_add`, `/meme_remove`, `/meme_list`, `/quote`, `/riddle`, `/quiz`, `/challenge`, `/morpion`, `/compatibility`, `/choose`), vocal (`/voice create`, `/voice delete`), utilitaires (`/calc`, `/convert`, `/timestamp`, `/timezone`, `/password`, `/define`, `/qr`, `/weather`, `/remind`), informations (`/userinfo`, `/serverinfo`, `/roleinfo`, `/channelinfo`, `/avatar`), configuration ACL, rôles, signalements et modération.
+Commandes slash publiées : `/help`, `/setup`, `/ping`, `/serverinfo`, `/userinfo`, `/avatar`, `/banner`, `/weather`, `/qr`, `/password`, `/remind`, `/reminders`, `/timezone`, `/calc`, `/health`, `/version`, `/update_check`, `/update_plan`, `/modules`, `/config`, `/config_get`, `/config_list`, `/config_delete`, `/groupe`, `/permission`, `/aclrole`, `/role`, `/roleconfig`, `/verify`, `/channel_edit`, `/ban`, `/ban_temp`, `/kick`, `/unban`, `/mute`, `/unmute`, `/clear`, `/slowmode`, `/lock`, `/unlock`, `/warn`, `/warnings`, `/sanctions`, `/note`, `/report`, `/ticket`, `/ticket_close`, `/ticket_add`, `/ticket_remove`, `/ticket_claim`, `/ticket_unclaim`, `/ticket_transcript`, `/ticket_priority`, `/announce`, `/poll`, `/poll_vote`, `/poll_close`, `/faq`, `/faq_ai`, `/suggest`, `/suggest_status`, `/stats`, `/stats_report`, `/logs_csv`, `/rss`, `/rss_subscribe`, `/youtube_subscribe`, `/youtube_list`, `/twitch_status`, `/twitch_subscribe`, `/github_subscribe`, `/reddit_subscribe`, `/site_status`, `/calendar`, `/calendar_subscribe`, `/ai`, `/ai_config`, `/summarize`, `/rewrite`, `/ideas`, `/translate`, `/ai_admin_plan`, `/ai_admin_confirm`, `/ai_mod_alert`, `/ai_mod_incident`, `/ai_mod_confirm`, `/daily`, `/balance`, `/shop`, `/buy`, `/pay`, `/roll`, `/8ball`, `/meme`, `/quiz`, `/morpion`, `/voice`, `/music`, `/form_create` et `/form_open`.
+
+Le catalogue interne contient encore quelques handlers secondaires non publiés en slash direct afin de respecter la limite Discord de 100 commandes par scope. Les commandes retirées du scope public sont les moins prioritaires ou redondantes, par exemple certains mini-jeux secondaires, exports avancés, désabonnements et aliases.
 
 Les formulaires natifs Discord sont disponibles avec `/form_create nom titre question`, puis `/form_open nom`. Seuls les administrateurs peuvent créer ou remplacer un formulaire ; chaque réponse est envoyée dans le salon où le formulaire a été créé et est auditée.
 
-`/choose option1|option2|option3` choisit aléatoirement parmi les options fournies. Le séparateur `|` permet de conserver les espaces dans chaque proposition.
-
 `/morpion nouveau` crée une partie persistante dans le salon courant, puis `/morpion jouer case` joue une case de 1 à 9 contre le bot.
 
-Les administrateurs peuvent modifier un salon avec `/channel_edit salon champ valeur`. Les champs pris en charge sont `name`, `topic`, `slowmode`, `nsfw`, `category` et `position`. `/channel_sync_config salon clé` associe directement un salon ou une catégorie à une clé SQLite du bot comme `welcome_channel`, `reports.channel`, `log.channel`, `voice.temp_category` ou `ticket.category_id`.
+Les administrateurs peuvent modifier un salon avec `/channel_edit salon champ valeur`. Les champs pris en charge sont `name`, `topic`, `slowmode`, `nsfw`, `category` et `position`.
 
 `/timezone decalage` affiche l’heure correspondant à un décalage UTC de -12 à +14. `/password longueur` génère un mot de passe éphémère de 8 à 64 caractères; pour un secret critique, utiliser un gestionnaire dédié.
-
-`/define mot` interroge ponctuellement l’API publique Dictionary API pour une définition en anglais. Le mot est limité à 64 caractères alphabétiques et n’est pas conservé par le bot.
 
 ## 🏗️ Compiler
 
@@ -281,7 +279,7 @@ DISCORD_APP_ID=... DISCORD_BOT_TOKEN=... ./bot gateway
 
 Au démarrage Gateway, NolcBot reçoit la liste des serveurs Discord via `READY`, mémorise chaque `guild_id` dans SQLite puis publie automatiquement les commandes slash sur chaque serveur. Quand le bot rejoint un nouveau serveur, l’événement `GUILD_CREATE` déclenche aussi la synchronisation automatiquement.
 
-Discord limite les commandes slash d’une application à **100 commandes par scope**. NolcBot garde un catalogue interne plus large, mais l’auto-sync publie un lot Discord priorisé par modules via `./bot commands-json-discord`. Les commandes visibles dans le `/help` principal sont incluses dans ce lot, notamment `/setup`, `/ban`, `/ticket`, `/ai`, `/modules`, `/permission`, `/youtube_subscribe`, `/daily`, `/quiz`, `/morpion`, `/weather`, `/remind`, `/update_check` et `/update_plan`.
+Discord limite les commandes slash d’une application à **100 commandes par scope**. NolcBot garde un catalogue interne plus large, mais l’auto-sync publie un lot Discord priorisé par modules via `./bot commands-json-discord`. Le lot actuel privilégie les commandes utiles en production : modération, tickets, configuration, édition de salon, intégrations, IA, économie de base, vocal/musique, formulaires et utilitaires.
 
 Pour éviter les vieilles commandes globales qui traînent, NolcBot purge automatiquement les commandes globales au premier démarrage après un changement de catalogue, puis utilise les commandes serveur, beaucoup plus rapides à propager.
 
@@ -351,26 +349,24 @@ La file musicale persistante est disponible avec `/music add URL`, `/music list`
 
 En cas de coupure Gateway ou de silence prolongé, le client ferme la session et se reconnecte automatiquement avec un délai progressif d’une à trente secondes.
 
-Une première intégration webhook Discord est disponible avec `NOLIAE_WEBHOOK_URL` et `/webhook_test message`. L’URL reste uniquement dans l’environnement, est validée pour `discord.com/api/webhooks/` et n’est jamais stockée dans SQLite.
-Les administrateurs peuvent consulter les invitations actuelles avec `/invites` : code, nombre d’utilisations et créateur sont lus directement depuis Discord. Les utilisations observées sont mémorisées dans `invite_cache` et les augmentations sont auditées ; l’attribution automatique d’une arrivée et la détection avancée des invitations suspectes restent à compléter.
-`/invite_stats` affiche le classement des créateurs selon les nouvelles utilisations observées.
+Une première intégration webhook Discord existe côté catalogue interne, mais n’est pas publiée dans le lot slash prioritaire actuel. L’URL reste uniquement dans l’environnement, est validée pour `discord.com/api/webhooks/` et n’est jamais stockée dans SQLite.
+Le suivi des invitations est présent côté stockage/audit interne. Les commandes dédiées aux invitations ne sont pas publiées dans le lot slash prioritaire actuel afin de réserver les 100 slots Discord aux fonctions les plus utilisées.
 Pour automatiser l’observation, un administrateur peut activer `/config invites.tracking true`; le bot interroge alors les invitations toutes les cinq minutes sur les ticks Gateway.
 
 Les invitations sans créateur Discord identifiable ou dont le compteur revient en arrière sont journalisées comme `invite_suspect`. Ce sont des alertes de modération et non une preuve définitive de fraude.
-Les partenariats disposent d’un workflow persistant : `/partnership proposer nom lien description`, puis les administrateurs utilisent `/partnership lister`, `/partnership accepter id` ou `/partnership refuser id`.
-Avec `/config partnership.channel ID_SALON`, les partenariats acceptés sont publiés automatiquement dans le salon choisi.
+Les partenariats disposent d’un workflow persistant côté catalogue interne, mais ne sont pas publiés dans le lot slash prioritaire actuel. Avec `/config partnership.channel ID_SALON`, les partenariats acceptés peuvent être publiés automatiquement dans le salon choisi lorsque le module est exposé.
 
 `/site_status https://exemple.fr/` réalise une vérification HTTPS ponctuelle. Les URL HTTP, les hôtes locaux évidents, les adresses privées usuelles, les identifiants intégrés et les URL de plus de 2048 caractères sont refusés ; la commande ne conserve pas l’URL.
 
-`/calendar URL_ICS` lit ponctuellement le prochain événement d’un calendrier iCalendar HTTPS public. Les administrateurs peuvent aussi utiliser `/calendar_subscribe` et `/calendar_unsubscribe` : jusqu’à cinq calendriers sont conservés par serveur et vérifiés périodiquement pour notifier les nouveaux titres dans le salon choisi.
+`/calendar URL_ICS` lit ponctuellement le prochain événement d’un calendrier iCalendar HTTPS public. Les administrateurs peuvent aussi utiliser `/calendar_subscribe` : jusqu’à cinq calendriers sont conservés par serveur et vérifiés périodiquement pour notifier les nouveaux titres dans le salon choisi.
 
 `/rss https://exemple.fr/flux.xml` lit le premier titre d’un flux RSS HTTPS public. Les mentions contenues dans le titre sont neutralisées ; le bot ne conserve pas le flux et les appels restent soumis au rate-limit des commandes.
 
-Les notifications persistantes sont disponibles pour YouTube (`/youtube_subscribe channel_id` avec un identifiant `UC...`), GitHub (`/github_subscribe organisation/projet`) et Reddit (`/reddit_subscribe subreddit`). YouTube utilise le flux officiel de la chaîne et publie un message dédié `Nouvelle vidéo YouTube` quand le dernier titre change. `/youtube_list` liste les chaînes suivies. La désinscription se fait avec `/rss_unsubscribe URL`.
+Les notifications persistantes sont disponibles pour YouTube (`/youtube_subscribe channel_id` avec un identifiant `UC...`), GitHub (`/github_subscribe organisation/projet`) et Reddit (`/reddit_subscribe subreddit`). YouTube utilise le flux officiel de la chaîne et publie un message dédié `Nouvelle vidéo YouTube` quand le dernier titre change. `/youtube_list` liste les chaînes suivies.
 
-`/twitch_status chaine` interroge ponctuellement Twitch Helix. `/twitch_subscribe chaine`, `/twitch_unsubscribe chaine` et `/twitch_list` gèrent les notifications persistantes de passage en direct. Quand une chaîne passe hors-ligne puis live, le bot publie le lien direct `https://www.twitch.tv/chaine` dans le salon configuré. Ils nécessitent les clés SQLite `_system.integration.twitch.client_id` et `_system.integration.twitch.app_token`.
+`/twitch_status chaine` interroge ponctuellement Twitch Helix. `/twitch_subscribe chaine` gère les notifications persistantes de passage en direct. Quand une chaîne passe hors-ligne puis live, le bot publie le lien direct `https://www.twitch.tv/chaine` dans le salon configuré. Ces fonctions nécessitent les clés SQLite `_system.integration.twitch.client_id` et `_system.integration.twitch.app_token`.
 
-Les administrateurs peuvent abonner le salon courant avec `/rss_subscribe url` et retirer l’abonnement avec `/rss_unsubscribe url`. Jusqu’à 10 flux sont suivis par serveur, contrôlés au plus toutes les cinq minutes sur les événements Gateway, et chaque dernier titre est mémorisé pour éviter les doublons.
+Les administrateurs peuvent abonner le salon courant avec `/rss_subscribe url`. Jusqu’à 10 flux sont suivis par serveur, contrôlés au plus toutes les cinq minutes sur les événements Gateway, et chaque dernier titre est mémorisé pour éviter les doublons.
 
 Chaque serveur peut gérer sa FAQ avec `/faq ajouter question reponse`, `/faq voir question`, `/faq lister` et `/faq supprimer question`. Les réponses sont persistantes, propres au serveur et accessibles sans modifier le code ; la gestion nécessite la permission `admin`.
 
@@ -413,15 +409,15 @@ L’anti-spam se configure par serveur avec `/config antispam.max_messages 5` et
 
 Le rate-limit des commandes se configure avec `/config ratelimit.max_commands 5` et `/config ratelimit.window_seconds 10`. Il protège chaque utilisateur des abus de commandes et reste désactivé par défaut.
 
-La progression communautaire est opt-in : `/config xp.enabled true` active un point par message et `/profile` affiche XP, niveau et badge. `/config xp.enabled false` désactive l’attribution; les scores restent dans la base jusqu’à suppression des données. `/xp_leaderboard` affiche le meilleur score et `/xp_reset membre` permet à un administrateur de réinitialiser un membre. Le multiplicateur, les exclusions par salon/rôle et le délai anti-farm sont configurables.
+La progression communautaire est opt-in : `/config xp.enabled true` active un point par message. `/config xp.enabled false` désactive l’attribution; les scores restent dans la base jusqu’à suppression des données. Le multiplicateur, les exclusions par salon/rôle et le délai anti-farm sont configurables.
 
-`/data_export` fournit en réponse privée les données personnelles persistées sur le serveur courant : XP, économie, temps vocal, note et inventaire. La commande ne peut exporter que les données de l’utilisateur appelant.
+Les exports/suppressions de données avancés existent côté catalogue interne, mais ne sont pas publiés dans le lot slash prioritaire actuel afin de garder les 100 commandes les plus utiles accessibles directement.
 
 Un rôle de récompense peut être configuré par niveau avec `/config xp.role.5 ID_ROLE_DISCORD`. Lorsque l’utilisateur atteint le niveau 5, le bot lui attribue ce rôle réel si ses permissions Discord le permettent.
 
 Pour le vocal, `/config voice.role_seconds 3600` et `/config voice.role_id ID_ROLE_DISCORD` attribuent le rôle après une heure cumulée en vocal. Le suivi reste limité aux événements `VOICE_STATE_UPDATE` ; aucune lecture audio n’est fournie.
 
-L’économie virtuelle est disponible par serveur avec `/balance`, `/daily`, `/weekly`, `/work`, `/shop`, `/buy`, `/inventory`, `/transactions`, `/pay` et `/leaderboard`. Les soldes sont persistés dans SQLite; la récompense quotidienne vaut 100 pièces avec un cooldown de 24 heures, la récompense hebdomadaire 500 pièces avec un cooldown de 7 jours, `/work` rapporte aléatoirement 50 à 200 pièces avec un cooldown d’une heure, et les achats sont atomiques et persistés dans l’inventaire. `/transactions` affiche les 10 dernières opérations du demandeur. Les transferts ne peuvent pas créer de solde négatif. L’XP et les succès sont visibles avec `/profile` et `/achievements`.
+L’économie virtuelle publiée dans le lot slash prioritaire couvre `/balance`, `/daily`, `/shop`, `/buy` et `/pay`. Les soldes sont persistés dans SQLite; la récompense quotidienne vaut 100 pièces avec un cooldown de 24 heures, les achats sont atomiques et les transferts ne peuvent pas créer de solde négatif.
 
 Les administrateurs peuvent publier un sondage Oui/Non avec `/poll question`; la publication est envoyée via l’API Discord et inscrite dans l’audit.
 

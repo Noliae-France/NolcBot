@@ -101,34 +101,34 @@ fn aide_design() -> Text {
 fn aide_module(module: Text) -> Text {
     let m = lower(module)
     if m == "moderation" or m == "modération" or m == "modo" {
-        return "## 🛡️ Modération\n`/ban` `/ban_temp` `/kick` `/unban`\n`/mute` `/unmute` `/clear` `/slowmode`\n`/lock` `/unlock` `/warn` `/warnings`\n`/sanctions` `/sanction_revoke` `/sanction_appeal`\n`/note` `/report`"
+        return "## 🛡️ Modération\n`/ban` `/ban_temp` `/kick` `/unban`\n`/mute` `/unmute` `/clear` `/slowmode`\n`/lock` `/unlock` `/warn` `/warnings`\n`/sanctions` `/note` `/report`"
     }
     if m == "tickets" or m == "ticket" {
         return "## 🎫 Tickets\n`/ticket` `/ticket_close`\n`/ticket_add` `/ticket_remove`\n`/ticket_claim` `/ticket_unclaim`\n`/ticket_transcript` `/ticket_priority`"
     }
     if m == "ia" or m == "ai" {
-        return "## 🤖 IA\n`/ai` `/summarize` `/rewrite` `/ideas` `/translate`\n`/ai_config` `/ai_admin_plan` `/ai_admin_confirm`\n`/ai_mod_alert` `/ai_mod_incident` `/ai_mod_confirm`\n`/community_event_ideas` `/community_rules`\n`/community_onboarding` `/community_announce_ai`"
+        return "## 🤖 IA\n`/ai` `/ai_config`\n`/summarize` `/rewrite` `/ideas` `/translate`\n`/ai_admin_plan` `/ai_admin_confirm`\n`/ai_mod_alert` `/ai_mod_incident` `/ai_mod_confirm`"
     }
     if m == "admin" or m == "configuration" or m == "config" {
-        return "## ⚙️ Administration\n`/config` `/config_get` `/config_list` `/config_delete`\n`/modules` `/groupe` `/permission` `/aclrole`\n`/role` `/roleconfig` `/verify`"
+        return "## ⚙️ Administration\n`/config` `/config_get` `/config_list` `/config_delete`\n`/modules` `/groupe` `/permission` `/aclrole`\n`/role` `/roleconfig` `/verify`\n`/channel_edit` `/update_check` `/update_plan`"
     }
     if m == "communauté" or m == "communaute" or m == "community" {
-        return "## 👥 Communauté\n`/faq` `/faq_ai` `/announce` `/announce_schedule`\n`/poll` `/poll_vote` `/poll_close`\n`/suggest` `/suggest_status` `/partnership`\n`/invites` `/invite_stats`\n`/profile` `/achievements` `/xp_leaderboard` `/xp_reset`"
+        return "## 👥 Communauté\n`/faq` `/faq_ai`\n`/announce` `/poll` `/poll_vote` `/poll_close`\n`/suggest` `/suggest_status`"
     }
     if m == "integrations" or m == "intégrations" or m == "integration" {
-        return "## 🔌 Intégrations\n`/rss` `/rss_subscribe`\n`/youtube_subscribe` `/youtube_list`\n`/github_subscribe` `/reddit_subscribe`\n`/twitch_status` `/twitch_subscribe`\n`/site_status`"
+        return "## 🔌 Intégrations\n`/rss` `/rss_subscribe`\n`/youtube_subscribe` `/youtube_list`\n`/github_subscribe` `/reddit_subscribe`\n`/twitch_status` `/twitch_subscribe`\n`/site_status` `/calendar` `/calendar_subscribe`"
     }
     if m == "économie" or m == "economie" or m == "economy" or m == "eco" {
-        return "## 💰 Économie\n`/balance` `/leaderboard`\n`/daily` `/weekly` `/work`\n`/shop` `/buy` `/inventory`\n`/transactions` `/pay`"
+        return "## 💰 Économie\n`/balance` `/daily`\n`/shop` `/buy` `/pay`"
     }
     if m == "fun" or m == "jeux" or m == "games" {
-        return "## 🎮 Fun\n`/roll` `/coin` `/8ball` `/pfc`\n`/joke` `/meme` `/meme_list`\n`/quiz` `/morpion`"
+        return "## 🎮 Fun\n`/roll` `/8ball` `/meme`\n`/quiz` `/morpion`"
     }
     if m == "stats" or m == "statistiques" {
-        return "## 📊 Statistiques\n`/stats` `/stats_csv` `/stats_report`\n`/logs_csv` `/data_export` `/data_delete`\n`/health` `/version` `/privacy`"
+        return "## 📊 Statistiques\n`/stats` `/stats_report`\n`/logs_csv`\n`/health` `/version`"
     }
     if m == "utils" or m == "utilitaires" or m == "utility" {
-        return "## 🧰 Utilitaires\n`/userinfo` `/serverinfo`\n`/weather` `/remind`"
+        return "## 🧰 Utilitaires\n`/userinfo` `/serverinfo`\n`/avatar` `/banner`\n`/weather` `/qr` `/password`\n`/remind` `/reminders` `/timezone` `/calc`\n`/voice` `/music` `/form_create` `/form_open`"
     }
     return "## 📚 Module inconnu\nModules disponibles : `modération`, `tickets`, `ia`, `admin`, `communauté`, `intégrations`, `économie`, `fun`, `stats`, `utils`."
 }
